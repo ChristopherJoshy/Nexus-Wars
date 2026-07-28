@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { submissions, teamMembers, jobs, settings } from "@/lib/db/schema";
 import { getSession } from "@/lib/get-session";
-import { eq, sql, and, gte } from "drizzle-orm";
+import { eq, ne, sql, and, gte } from "drizzle-orm";
 import { getS3, S3_BUCKET, PutObjectCommand } from "@/lib/s3";
 import { randomUUID } from "crypto";
 
@@ -40,7 +40,8 @@ export async function POST(req: NextRequest) {
     .where(
       and(
         eq(submissions.teamId, membership.teamId),
-        gte(submissions.createdAt, todayStart)
+        gte(submissions.createdAt, todayStart),
+        ne(submissions.status, "rejected")
       )
     );
   if ((countResult?.count ?? 0) >= MAX_SUBMISSIONS_PER_DAY) {
