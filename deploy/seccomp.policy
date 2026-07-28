@@ -5,7 +5,7 @@ ALLOW {
   newfstatat, statx, stat, lstat, fstat,
   access, faccessat, faccessat2,
   lseek,
-  mmap, munmap, mprotect, madvise, mremap, brk,
+  mmap, munmap, mprotect, madvise, mremap, brk, mbind,
   mlock, munlock, mincore,
   ioctl, fcntl, fadvise64, fallocate,
   rt_sigaction, rt_sigprocmask, rt_sigreturn, sigaltstack,
