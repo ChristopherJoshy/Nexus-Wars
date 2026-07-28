@@ -1,0 +1,4 @@
+deploy/*.policy text eol=lf
+deploy/*.sh text eol=lf
+deploy/*.cfg text eol=lf
+deploy/Dockerfile* text eol=lf
