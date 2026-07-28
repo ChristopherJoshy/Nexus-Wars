@@ -1,0 +1,26 @@
+diff --git a/node_modules/jwks-rsa/src/utils.js b/node_modules/jwks-rsa/src/utils.js
+index ef3ffb5..0fd5455 100644
+--- a/node_modules/jwks-rsa/src/utils.js
++++ b/node_modules/jwks-rsa/src/utils.js
+@@ -1,4 +1,3 @@
+-const jose = require('jose');
+ const JwksError = require('./errors/JwksError');
+ 
+ function resolveAlg(jwk) {
+@@ -33,6 +32,7 @@ function resolveAlg(jwk) {
+ }
+ 
+ async function retrieveSigningKeys(jwks) {
++  const jose = await import('jose');
+   const results = [];
+ 
+   jwks = jwks
+@@ -53,8 +53,6 @@ async function retrieveSigningKeys(jwks) {
+           break;
+         }
+         case 'KeyObject':
+-          // Assume legacy Node.js version without the Symbol.toStringTag backported
+-          // Fall through
+         default:
+           getSpki = () => key.export({ format: 'pem', type: 'spki' });
+       }
