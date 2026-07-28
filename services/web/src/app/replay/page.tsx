@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef, Suspense } from "react";
+import { useEffect, useState, useRef, useMemo, Suspense } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import {
@@ -93,6 +93,7 @@ function GameHistoryContent() {
   // Telemetry Controls
   const [showFleetNum, setShowFleetNum] = useState(true);
   const [showProduction, setShowProduction] = useState(true);
+  const [showTrajectories, setShowTrajectories] = useState(false);
   const [fleetSizeFilter, setFleetSizeFilter] = useState<"all" | "small" | "medium" | "large">("all");
 
   const sidebarRef = useRef<HTMLDivElement>(null);
@@ -213,18 +214,39 @@ function GameHistoryContent() {
     return replay.steps.length - 1;
   })();
 
-  const advance = useCallback(() => {
-    setStep((s) => (s < maxStep ? s + 1 : (setPlaying(false), s)));
-  }, [maxStep]);
-
-  // Playback Step Timing (ms per step: 0.5x=300ms, 1x=150ms, 2x=75ms, 4x=35ms)
+  // Smooth, high-precision requestAnimationFrame playback loop
   useEffect(() => {
     if (!playing || !replay) return;
     const speedMap: Record<number, number> = { 0.5: 300, 1: 150, 2: 75, 4: 35 };
     const intervalMs = speedMap[speedMultiplier] || 150;
-    const id = setInterval(advance, intervalMs);
-    return () => clearInterval(id);
-  }, [playing, speedMultiplier, advance, replay]);
+
+    let animId: number;
+    let lastTime = performance.now();
+    let accumulatedMs = 0;
+
+    const loop = (now: number) => {
+      const delta = now - lastTime;
+      lastTime = now;
+      accumulatedMs += delta;
+
+      if (accumulatedMs >= intervalMs) {
+        const stepsToAdvance = Math.floor(accumulatedMs / intervalMs);
+        accumulatedMs %= intervalMs;
+        setStep((s) => {
+          const next = s + stepsToAdvance;
+          if (next >= maxStep) {
+            setPlaying(false);
+            return maxStep;
+          }
+          return next;
+        });
+      }
+      animId = requestAnimationFrame(loop);
+    };
+
+    animId = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(animId);
+  }, [playing, speedMultiplier, replay, maxStep]);
 
   const copySeed = () => {
     if (!selectedMatch) return;
@@ -254,7 +276,7 @@ function GameHistoryContent() {
   const currentStep = replay ? replay.steps[Math.min(step, replay.steps.length - 1)] : null;
 
   // Compute live match telemetry statistics from currentStep
-  const telemetry = (() => {
+  const telemetry = useMemo(() => {
     if (!currentStep) return null;
 
     const rawPlanets = currentStep.observation?.planets || [];
@@ -318,7 +340,7 @@ function GameHistoryContent() {
       p0ShipPct,
       p1ShipPct,
     };
-  })();
+  }, [currentStep]);
 
   const returnLink = submissionId ? "/submit" : "/leaderboard";
   const returnLabel = submissionId ? "Submissions" : "Leaderboard";
@@ -506,6 +528,14 @@ function GameHistoryContent() {
               >
                 Production
               </Button>
+              <Button
+                variant={showTrajectories ? "default" : "outline"}
+                size="sm"
+                onClick={() => setShowTrajectories(!showTrajectories)}
+                className="h-6 px-2 text-[10px] font-mono border-border"
+              >
+                Trajectories
+              </Button>
               <div className="flex items-center border border-border rounded-md overflow-hidden p-0.5 bg-muted/40">
                 {(["all", "small", "medium", "large"] as const).map((filter) => (
                   <button
@@ -579,6 +609,7 @@ function GameHistoryContent() {
                 height={canvasDim}
                 showFleetNum={showFleetNum}
                 showProduction={showProduction}
+                showTrajectories={showTrajectories}
                 fleetSizeFilter={fleetSizeFilter}
               />
             ) : (

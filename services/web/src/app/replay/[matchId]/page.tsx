@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useRef } from "react";
 import Link from "next/link";
 import {
   ArrowLeft,
@@ -83,6 +83,7 @@ export default function MatchReplayPage({
   // Telemetry Controls
   const [showFleetNum, setShowFleetNum] = useState(true);
   const [showProduction, setShowProduction] = useState(true);
+  const [showTrajectories, setShowTrajectories] = useState(false);
   const [fleetSizeFilter, setFleetSizeFilter] = useState<"all" | "small" | "medium" | "large">("all");
 
   const sidebarRef = useRef<HTMLDivElement>(null);
@@ -156,16 +157,38 @@ export default function MatchReplayPage({
 
   const maxStep = replay ? replay.steps.length - 1 : 0;
 
-  const advance = useCallback(() => {
-    setStep((s) => (s < maxStep ? s + 1 : (setPlaying(false), s)));
-  }, [maxStep]);
-
+  // Smooth, high-precision requestAnimationFrame playback loop
   useEffect(() => {
     if (!playing || !replay) return;
     const intervalMs = Math.max(20, 100 / speedMultiplier);
-    const id = setInterval(advance, intervalMs);
-    return () => clearInterval(id);
-  }, [playing, speedMultiplier, advance, replay]);
+
+    let animId: number;
+    let lastTime = performance.now();
+    let accumulatedMs = 0;
+
+    const loop = (now: number) => {
+      const delta = now - lastTime;
+      lastTime = now;
+      accumulatedMs += delta;
+
+      if (accumulatedMs >= intervalMs) {
+        const stepsToAdvance = Math.floor(accumulatedMs / intervalMs);
+        accumulatedMs %= intervalMs;
+        setStep((s) => {
+          const next = s + stepsToAdvance;
+          if (next >= maxStep) {
+            setPlaying(false);
+            return maxStep;
+          }
+          return next;
+        });
+      }
+      animId = requestAnimationFrame(loop);
+    };
+
+    animId = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(animId);
+  }, [playing, speedMultiplier, replay, maxStep]);
 
   const copySeed = () => {
     if (!selectedMatch) return;
@@ -320,6 +343,14 @@ export default function MatchReplayPage({
               >
                 Production
               </Button>
+              <Button
+                variant={showTrajectories ? "default" : "outline"}
+                size="sm"
+                onClick={() => setShowTrajectories(!showTrajectories)}
+                className="h-7 px-2.5 text-[10px] font-mono border-border"
+              >
+                Trajectories
+              </Button>
               <div className="flex items-center border border-border rounded-md overflow-hidden p-0.5 bg-muted/40">
                 {(["all", "small", "medium", "large"] as const).map((filter) => (
                   <button
@@ -349,6 +380,7 @@ export default function MatchReplayPage({
               height={540}
               showFleetNum={showFleetNum}
               showProduction={showProduction}
+              showTrajectories={showTrajectories}
               fleetSizeFilter={fleetSizeFilter}
             />
           ) : (

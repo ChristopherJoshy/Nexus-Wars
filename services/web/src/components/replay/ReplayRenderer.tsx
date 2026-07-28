@@ -73,6 +73,7 @@ interface ReplayRendererProps {
   height?: number;
   showFleetNum?: boolean;
   showProduction?: boolean;
+  showTrajectories?: boolean;
   fleetSizeFilter?: "all" | "small" | "medium" | "large";
 }
 
@@ -110,6 +111,7 @@ export function ReplayRenderer({
   height = 580,
   showFleetNum = true,
   showProduction = true,
+  showTrajectories = false,
   fleetSizeFilter = "all",
 }: ReplayRendererProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -120,11 +122,15 @@ export function ReplayRenderer({
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    // Support High-DPI displays (Retina, 4K)
+    // Support High-DPI displays (Retina, 4K) without re-allocating canvas buffer every frame
     const dpr = typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1;
-    canvas.width = Math.floor(width * dpr);
-    canvas.height = Math.floor(height * dpr);
-    ctx.scale(dpr, dpr);
+    const targetW = Math.floor(width * dpr);
+    const targetH = Math.floor(height * dpr);
+    if (canvas.width !== targetW || canvas.height !== targetH) {
+      canvas.width = targetW;
+      canvas.height = targetH;
+    }
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
     // Calculate padding margin so edge planets and text labels never clip
     const padding = Math.max(28, Math.round(width * 0.05));
@@ -144,18 +150,16 @@ export function ReplayRenderer({
     // Fine Paper Grid Lines
     ctx.strokeStyle = "#e8e1d5";
     ctx.lineWidth = 0.6;
+    ctx.beginPath();
     for (let i = 0; i <= BOARD_SIZE; i += 10) {
       const gx = toScreenX(i);
       const gy = toScreenY(i);
-      ctx.beginPath();
       ctx.moveTo(gx, padding);
       ctx.lineTo(gx, height - padding);
-      ctx.stroke();
-      ctx.beginPath();
       ctx.moveTo(padding, gy);
       ctx.lineTo(width - padding, gy);
-      ctx.stroke();
     }
+    ctx.stroke();
 
     // Outer Board Boundary Line
     ctx.strokeStyle = "#d4c9b8";
@@ -205,27 +209,44 @@ export function ReplayRenderer({
     ctx.lineWidth = 1.5;
     ctx.stroke();
 
-    // Render Fleet Trajectory Dashed Lines (Matching Owner Color)
-    for (const f of fleets) {
-      const originPlanet = planetsMap.get(f.from_planet_id);
-      if (originPlanet) {
-        const pColors = PLAYER_COLORS[f.owner as keyof typeof PLAYER_COLORS] || PLAYER_COLORS[-1];
-        const fx = toScreenX(f.x);
-        const fy = toScreenY(f.y);
-        const ox = toScreenX(originPlanet.x);
-        const oy = toScreenY(originPlanet.y);
+    // Optional: Fleet Trajectory Dashed Lines (Only rendered when showTrajectories is true)
+    if (showTrajectories && fleets.length > 0) {
+      ctx.save();
+      ctx.setLineDash([3, 4]);
+      ctx.globalAlpha = 0.35;
+      ctx.lineWidth = 1.0;
 
-        ctx.beginPath();
-        ctx.setLineDash([3, 4]);
-        ctx.moveTo(ox, oy);
-        ctx.lineTo(fx, fy);
-        ctx.strokeStyle = pColors.main;
-        ctx.globalAlpha = 0.45;
-        ctx.lineWidth = 1.2;
-        ctx.stroke();
-        ctx.globalAlpha = 1.0;
-        ctx.setLineDash([]);
+      // Group trajectory lines by player owner color to batch draw calls
+      const fleetsByOwner = new Map<number, Fleet[]>();
+      for (const f of fleets) {
+        const owner = f.owner;
+        let list = fleetsByOwner.get(owner);
+        if (!list) {
+          list = [];
+          fleetsByOwner.set(owner, list);
+        }
+        list.push(f);
       }
+
+      for (const [owner, ownerFleets] of fleetsByOwner.entries()) {
+        const pColors = PLAYER_COLORS[owner as keyof typeof PLAYER_COLORS] || PLAYER_COLORS[-1];
+        ctx.strokeStyle = pColors.main;
+        ctx.beginPath();
+
+        for (const f of ownerFleets) {
+          const originPlanet = planetsMap.get(f.from_planet_id);
+          if (originPlanet) {
+            const fx = toScreenX(f.x);
+            const fy = toScreenY(f.y);
+            const ox = toScreenX(originPlanet.x);
+            const oy = toScreenY(originPlanet.y);
+            ctx.moveTo(ox, oy);
+            ctx.lineTo(fx, fy);
+          }
+        }
+        ctx.stroke();
+      }
+      ctx.restore();
     }
 
     // Render Planet Nodes
@@ -337,7 +358,7 @@ export function ReplayRenderer({
     ctx.textAlign = "left";
     ctx.textBaseline = "top";
     ctx.fillText(`Step ${step.observation.step}`, padding + 6, padding + 6);
-  }, [step, width, height, showFleetNum, showProduction, fleetSizeFilter]);
+  }, [step, width, height, showFleetNum, showProduction, showTrajectories, fleetSizeFilter]);
 
   return (
     <canvas

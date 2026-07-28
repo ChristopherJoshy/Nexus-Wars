@@ -55,12 +55,13 @@ python -m pytest tests/ -q
 python services/worker/rating/test_glicko2.py
 ```
 
-## Submitting a Bot
+## Submitting & Testing Bots
 
 1. Create a team on the web app
 2. Write a Python bot that implements the `agent()` function
-3. Upload via the submission page
-4. The worker validates, runs matches, and updates ratings
+3. Test locally using the official [Local Testing Tools](https://github.com/ChristopherJoshy/Nexus-wars-local-testing-tools-) repository
+4. Upload via the submission page
+5. The worker validates, runs matches, and updates ratings
 
 ### Bot API
 
