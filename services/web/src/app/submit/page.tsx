@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef } from "react";
 import Link from "next/link";
-import { CheckCircle2, AlertTriangle, Upload, Zap, Clock, Tv, Loader2, Trophy } from "lucide-react";
+import { Upload, Zap, Clock, Tv, Loader2, Trophy } from "lucide-react";
 import { useSession, signIn } from "@/lib/auth-client";
 import { Button } from "@/components/ui/button";
 import { animate } from "animejs";
@@ -319,8 +319,6 @@ export default function SubmissionsPage() {
 
         <div ref={listRef} className="divide-y divide-border">
           {filteredSubmissions.map((s) => {
-            const isError = s.status === "error" || s.status === "failed" || s.status === "rejected" || s.status === "errored";
-            const isActive = s.status === "active";
             const filename = (s.artifactKey || s.artifact_key || "agent.py").split("/").pop() || "agent.py";
             const createdRaw = s.createdAt || s.created_at;
             const relativeTimeStr = formatRelativeTime(createdRaw);
@@ -331,27 +329,21 @@ export default function SubmissionsPage() {
                 className="sub-row-anim opacity-0 px-5 py-3.5 flex items-center justify-between hover:bg-muted/50 transition-colors"
               >
                 <div className="flex items-center gap-3">
-                  {isError ? (
-                    <AlertTriangle className="w-5 h-5 text-amber-700 shrink-0" />
-                  ) : (
-                    <CheckCircle2 className={`w-5 h-5 shrink-0 ${isActive ? "text-primary" : "text-muted-foreground"}`} />
-                  )}
-
                   <div>
                     <div className="text-xs font-semibold text-foreground font-mono">{filename}</div>
                     <div className="text-[11px] text-muted-foreground font-mono">
                       {s.status} &bull; {relativeTimeStr}
                     </div>
                   </div>
-                </div>
 
-                <div className="flex items-center gap-6">
-                  {typeof s.rating === "number" && (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-amber-500/10 border border-amber-500/20 text-[10px] font-mono text-amber-700 dark:text-amber-300 font-bold">
-                      <Trophy className="w-3 h-3 text-amber-600 shrink-0" />
-                      {s.rating.toFixed(1)}
-                    </span>
-                  )}
+                  <div className="flex flex-col items-center gap-1">
+                    {typeof s.rating === "number" && (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-amber-500/15 border border-amber-500/30 text-xs font-mono text-amber-800 dark:text-amber-200 font-bold">
+                        <Trophy className="w-3.5 h-3.5 text-amber-700 shrink-0" />
+                        {s.rating.toFixed(1)}
+                      </span>
+                    )}
+                  </div>
 
                   {(s.matchesPlayed ?? 0) > 0 && (
                     <span className="font-mono text-[10px] text-muted-foreground">
