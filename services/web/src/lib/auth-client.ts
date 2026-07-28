@@ -63,7 +63,31 @@ export function useSession() {
         setState({ data: null, isPending: false });
       }
     });
-    return unsubscribe;
+
+    const handleVisibilityChange = async () => {
+      if (document.visibilityState === "visible" && auth.currentUser) {
+        try {
+          const freshToken = await auth.currentUser.getIdToken(true);
+          setState((prev) =>
+            prev.data
+              ? {
+                  ...prev,
+                  data: { ...prev.data, token: freshToken },
+                }
+              : prev
+          );
+        } catch {
+          // Token refresh failure safely handled
+        }
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      unsubscribe();
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
   }, []);
 
   return state;

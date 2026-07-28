@@ -54,10 +54,12 @@ export default function LeaderboardPage() {
   const { data: session } = useSession();
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [autoRefreshing, setAutoRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [reloadToken, setReloadToken] = useState(0);
   const tableRef = useRef<HTMLTableSectionElement>(null);
 
+  // Initial fetch and manual reload handler
   useEffect(() => {
     let isCurrent = true;
     const headers: Record<string, string> = {};
@@ -72,12 +74,14 @@ export default function LeaderboardPage() {
         if (isCurrent) {
           setEntries(data);
           setLoading(false);
+          setAutoRefreshing(false);
         }
       })
       .catch(() => {
         if (isCurrent) {
           setEntries([]);
           setLoading(false);
+          setAutoRefreshing(false);
         }
       });
 
@@ -85,6 +89,38 @@ export default function LeaderboardPage() {
       isCurrent = false;
     };
   }, [session, reloadToken]);
+
+  // Quiet 30-second background auto-refresh & visibility recovery
+  useEffect(() => {
+    const fetchQuietly = () => {
+      if (document.visibilityState !== "visible") return;
+      setAutoRefreshing(true);
+      const headers: Record<string, string> = {};
+      if (session?.token) headers["Authorization"] = `Bearer ${session.token}`;
+
+      fetch("/api/leaderboard", { headers })
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data: LeaderboardEntry[] | null) => {
+          if (data) setEntries(data);
+        })
+        .finally(() => setAutoRefreshing(false));
+    };
+
+    const interval = setInterval(fetchQuietly, 30000);
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        fetchQuietly();
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [session]);
 
   const refreshLeaderboard = () => {
     setLoading(true);
@@ -126,7 +162,13 @@ export default function LeaderboardPage() {
     <div className="space-y-5">
       {/* Top Action Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <h2 className="text-xl font-bold text-foreground tracking-tight">Leaderboard</h2>
+        <div className="flex items-center gap-3">
+          <h2 className="text-xl font-bold text-foreground tracking-tight">Leaderboard</h2>
+          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-[10px] font-mono text-emerald-600 dark:text-emerald-400 font-semibold">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+            <span>30s Auto-sync</span>
+          </span>
+        </div>
         <div className="flex items-center gap-2">
           <Button
             variant="outline"
@@ -141,11 +183,11 @@ export default function LeaderboardPage() {
           <Button
             variant="outline"
             size="sm"
-            loading={loading}
+            loading={loading || autoRefreshing}
             onClick={refreshLeaderboard}
             className="nexus-pill bg-muted border-border text-foreground hover:bg-accent text-xs"
           >
-            <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
+            <RefreshCw className={`w-3.5 h-3.5 ${loading || autoRefreshing ? "animate-spin" : ""}`} />
             Refresh
           </Button>
         </div>
