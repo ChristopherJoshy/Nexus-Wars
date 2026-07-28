@@ -72,6 +72,16 @@ export default function OverviewPage() {
                   <td className="p-2.5 text-muted-foreground">Head-to-head match between two autonomous Python agent processes</td>
                 </tr>
                 <tr className="hover:bg-muted/50">
+                  <td className="p-2.5 font-mono text-primary border-r border-border">Python Environment</td>
+                  <td className="p-2.5 border-r border-border">Python 3.12 64-bit</td>
+                  <td className="p-2.5 text-muted-foreground">Standard Python runtime with pre-installed <code className="font-mono text-primary">numpy</code></td>
+                </tr>
+                <tr className="hover:bg-muted/50">
+                  <td className="p-2.5 font-mono text-primary border-r border-border">Supported Libraries</td>
+                  <td className="p-2.5 border-r border-border"><code className="font-mono text-primary">numpy</code> + StdLib</td>
+                  <td className="p-2.5 text-muted-foreground">Standard library (<code className="font-mono">math</code>, <code className="font-mono">sys</code>, <code className="font-mono">json</code>, <code className="font-mono">random</code>, <code className="font-mono">heapq</code>) + <code className="font-mono">numpy</code>. Heavy frameworks (PyTorch, TensorFlow) exceed memory limits</td>
+                </tr>
+                <tr className="hover:bg-muted/50">
                   <td className="p-2.5 font-mono text-primary border-r border-border">Board Dimensions</td>
                   <td className="p-2.5 border-r border-border">100.0 &times; 100.0</td>
                   <td className="p-2.5 text-muted-foreground">Continuous 2D space with origin (0.0, 0.0) at top-left</td>
@@ -518,6 +528,16 @@ if __name__ == "__main__":
                   <td className="p-2.5 font-mono text-primary border-r border-border">Sandbox Isolation</td>
                   <td className="p-2.5 border-r border-border">Linux `nsjail`</td>
                   <td className="p-2.5 text-muted-foreground">Unprivileged user namespace execution with seccomp syscall filtering</td>
+                </tr>
+                <tr>
+                  <td className="p-2.5 font-mono text-primary border-r border-border">Pre-installed Packages</td>
+                  <td className="p-2.5 border-r border-border"><code className="font-mono text-primary">numpy</code> Available</td>
+                  <td className="p-2.5 text-muted-foreground"><code className="font-mono">import numpy as np</code> is fully supported for array math and vector calculations</td>
+                </tr>
+                <tr>
+                  <td className="p-2.5 font-mono text-primary border-r border-border">Heavy ML Frameworks</td>
+                  <td className="p-2.5 border-r border-border">Not Supported</td>
+                  <td className="p-2.5 text-muted-foreground">PyTorch / TensorFlow exceed the 512 MB memory limit and will trigger immediate process termination</td>
                 </tr>
                 <tr>
                   <td className="p-2.5 font-mono text-primary border-r border-border">Turn Timeout</td>
