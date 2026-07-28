@@ -18,9 +18,9 @@ import json
 import math
 import os
 import random
-import select
 import subprocess
 import sys
+import threading
 import time
 from types import SimpleNamespace
 
@@ -134,11 +134,10 @@ class SubprocessRunner:
             return []
 
         # Wait up to act_timeout for one line of stdout.
-        ready, _, _ = select.select([self.proc.stdout], [], [], self.act_timeout)
-        if not ready:
+        line = self._readline(obs_dict)
+        if line is None:
             self._kill()
             return []
-        line = self.proc.stdout.readline()
         if not line:
             self._kill()
             return []
@@ -150,6 +149,21 @@ class SubprocessRunner:
         except json.JSONDecodeError:
             self._kill()
             return []
+
+    def _readline(self, obs_dict):
+        result = [None]
+        def reader():
+            try:
+                result[0] = self.proc.stdout.readline()
+            except Exception:
+                result[0] = None
+        thread = threading.Thread(target=reader)
+        thread.daemon = True
+        thread.start()
+        thread.join(timeout=self.act_timeout)
+        if thread.is_alive():
+            return None
+        return result[0] if result[0] is not None else ""
 
     def _kill(self):
         self.dead = True
