@@ -39,7 +39,29 @@ def _release_lock(conn):
 
 
 def _recently_matched(conn, ta, tb):
-    # Random re-match window 1-100 minutes per call (cryptographically random)
+    # Rematch window: if either team has a newer active submission than their
+    # last match, allow rematch (the bot changed, so the matchup is new).
+    for team_id, other_id in [(ta, tb), (tb, ta)]:
+        newest = execute_returning(conn,
+            "SELECT s.created_at FROM submissions s "
+            "JOIN matches m ON "
+            "  ((m.team_a_id=%s AND m.team_b_id=%s) OR "
+            "   (m.team_a_id=%s AND m.team_b_id=%s)) "
+            "  AND m.status='finished' "
+            "WHERE s.team_id=%s AND s.status='active' "
+            "ORDER BY s.created_at DESC LIMIT 1",
+            (team_id, other_id, other_id, team_id, team_id))
+        if not newest:
+            continue  # no active submission = skip
+        last_match = execute_returning(conn,
+            "SELECT MAX(m.finished_at) FROM matches m "
+            "WHERE ((m.team_a_id=%s AND m.team_b_id=%s) OR "
+            "       (m.team_a_id=%s AND m.team_b_id=%s)) "
+            "  AND m.status='finished'",
+            (ta, tb, tb, ta))
+        if last_match and last_match[0] and newest[0] > last_match[0]:
+            return False  # newer submission than last match -> allow rematch
+    # Fall back to random window (1-100 min) to avoid rapid repeat pairings
     min_window = secrets.randbelow(100) + 1
     rows = execute_returning(conn,
         "SELECT 1 FROM matches "

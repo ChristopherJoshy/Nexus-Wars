@@ -91,6 +91,7 @@ def _rate_one(rating, rd, vol, days_since, opp_rating, opp_rd, score):
 
     r_new, rd_new = _from_internal(mu_prime, phi_prime)
     rd_new = min(RD_MAX, max(RD_MIN, rd_new))
+    r_new = max(0.0, r_new)
     return r_new, rd_new, vol_new
 
 
