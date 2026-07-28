@@ -7,7 +7,7 @@
 # killed at startup. We overlay the patched amd64 table, then build.
 #
 # Usage: build_nsjail.sh [install-prefix]   (default: /usr/local)
-set -e
+set -euo pipefail
 PREFIX="${1:-/usr/local}"
 NSJAIL_VER="${NSJAIL_VER:-3.4}"
 

@@ -2,6 +2,7 @@ import { auth } from "./firebase-client";
 import {
   GoogleAuthProvider,
   signInWithPopup,
+  signInWithRedirect,
   signOut as fbSignOut,
   onIdTokenChanged,
 } from "firebase/auth";
@@ -11,8 +12,15 @@ const googleProvider = new GoogleAuthProvider();
 
 export const signIn = {
   social: async ({ provider }: { provider: string }) => {
-    if (provider === "google") {
+    if (provider !== "google") return;
+    try {
       await signInWithPopup(auth, googleProvider);
+    } catch (e: unknown) {
+      if (e instanceof Error && "code" in e && (e as { code: string }).code === "auth/popup-blocked") {
+        await signInWithRedirect(auth, googleProvider);
+      } else {
+        throw e;
+      }
     }
   },
 };
