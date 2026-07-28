@@ -1,0 +1,4 @@
+psycopg[binary]
+boto3
+python-dotenv
+firebase-admin

@@ -1,0 +1,76 @@
+# Nexus Wars — local/dev infrastructure.
+# The worker runs the bot sandbox (nsjail + gVisor) and therefore MUST run on
+# a Linux host (WSL2 or native). The Next.js web app runs on Windows Node and
+# talks to these services over the network.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: nexus
+      POSTGRES_PASSWORD: nexus
+      POSTGRES_DB: nexus
+    ports:
+      - "5432:5432"
+    volumes:
+      - nexus_pg:/var/lib/postgresql/data
+      - ../migrations:/docker-entrypoint-initdb.d:ro
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: nexus
+      MINIO_ROOT_PASSWORD: nexusnexus
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - nexus_minio:/data
+
+  # Optional: create the replay bucket once.
+  mc:
+    image: minio/mc:latest
+    depends_on: [minio]
+    entrypoint: >
+      /bin/sh -c "
+      until mc alias set local http://minio:9000 nexus nexusnexus; do sleep 1; done;
+      mc mb -p local/nexus-replays || true;
+      mc anonymous set download local/nexus-replays || true;
+      exit 0;
+      "
+
+  worker:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.worker
+    depends_on: [postgres, minio]
+    privileged: true
+    environment:
+      DATABASE_URL: postgresql://nexus:nexus@postgres:5432/nexus
+      STORAGE_BACKEND: s3
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_KEY: nexus
+      MINIO_SECRET: nexusnexus
+      MINIO_BUCKET: nexus-replays
+      USE_NSJAIL: "1"
+      NSJAIL_CFG: /etc/nsjail/nsjail.cfg
+      MAX_CONCURRENT: "4"
+      POLL_INTERVAL: "1.0"
+      FIREBASE_SERVICE_ACCOUNT_PATH: /etc/firebase/service-account.json
+    volumes:
+      - ./nsjail.cfg:/etc/nsjail/nsjail.cfg:ro
+      - ./seccomp.policy:/etc/nsjail/seccomp.policy:ro
+      - ../services/worker:/app
+      - ../migrations:/migrations:ro
+      - ../nexuswars2026-firebase-adminsdk-fbsvc-1e2c995280.json:/etc/firebase/service-account.json:ro
+    cap_add:
+      - SYS_ADMIN   # nsjail: clone_newnet, clone_newpid, clone_newuts
+      - NET_ADMIN   # nsjail: network namespace
+      - MKNOD       # nsjail: device nodes
+      - SYS_CHROOT  # nsjail: chroot
+    restart: unless-stopped
+
+volumes:
+  nexus_pg:
+  nexus_minio:

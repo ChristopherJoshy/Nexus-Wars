@@ -1,0 +1,32 @@
+# Dependencies
+node_modules/
+__pycache__/
+*.pyc
+
+# Environment
+.env
+.env.*
+
+# Docker volumes
+deploy/nexus_pg/
+deploy/nexus_minio/
+
+# Firebase
+nexuswars2026-firebase-adminsdk-*.json
+
+# Test bots (not part of the project)
+test-bots/
+
+# Vendor (third-party, do not modify)
+services/worker/engine/vendor/
+
+# Logs
+*.log
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db

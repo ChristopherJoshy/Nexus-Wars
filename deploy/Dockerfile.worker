@@ -1,0 +1,36 @@
+# Worker image. The bot sandbox (nsjail + gVisor) requires a Linux host.
+FROM python:3.12-slim
+
+# Build deps for nsjail (built from source; see build_nsjail.sh).
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential ca-certificates unzip curl git flex bison \
+        libprotobuf-dev protobuf-compiler libnsl-dev pkg-config \
+        libcurl4-openssl-dev libnl-route-3-dev libnl-3-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# nsjail upstream 3.4's kafel table is missing modern syscalls
+# (rseq/statx/faccessat2/clone3/stat/lstat/fstat); build from source with the
+# patched table so the seccomp policy compiles and Python bots can start.
+COPY deploy/build_nsjail.sh /tmp/build_nsjail.sh
+RUN mkdir -p /tmp/nsjail-patch
+COPY deploy/nsjail-patch/amd64_syscalls.c /tmp/nsjail-patch/amd64_syscalls.c
+RUN bash /tmp/build_nsjail.sh /usr/local && rm -rf /tmp/nsjail-build /tmp/build_nsjail.sh /tmp/nsjail-patch
+
+WORKDIR /app
+COPY services/worker/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Engine + worker source.
+COPY services/worker/config.py services/worker/db.py services/worker/storage.py services/worker/jobs.py services/worker/matchmaker.py services/worker/main.py services/worker/firebase_init.py ./
+COPY services/worker/rating ./rating
+COPY services/worker/engine ./engine
+
+# Sandbox config + seccomp policy (consumed by nsjail when USE_NSJAIL=1).
+RUN mkdir -p /etc/nsjail /work
+COPY deploy/nsjail.cfg /etc/nsjail/nsjail.cfg
+COPY deploy/seccomp.policy /etc/nsjail/seccomp.policy
+
+ENV PYTHONUNBUFFERED=1
+ENV USE_NSJAIL=1
+ENV NSJAIL_CFG=/etc/nsjail/nsjail.cfg
+CMD ["python3", "main.py"]
