@@ -39,7 +39,7 @@ def _E(mu, mu_j, phi_j):
 
 def _step5(vol, phi_star, delta, tau=TAU):
     """Iterate to find the new volatility (Glickman step 5)."""
-    a = math.log(vol * vol)
+    a = math.log(max(vol * vol, 1e-300))
     eps = 1e-6
     A = a
 
@@ -49,8 +49,9 @@ def _step5(vol, phi_star, delta, tau=TAU):
                 (2.0 * (phi_star * phi_star + ex) ** 2)) - \
                (x - a) / (tau * tau)
 
-    if delta * delta > phi_star * phi_star:
-        B = math.log(delta * delta - phi_star * phi_star)
+    diff = delta * delta - phi_star * phi_star
+    if diff > 0:
+        B = math.log(diff)
     else:
         k = 1
         while f(a - k * tau) < 0:

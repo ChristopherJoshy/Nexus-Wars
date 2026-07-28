@@ -351,6 +351,9 @@ def interpreter(state, env):
     for fleet in obs0.fleets:
         angle = fleet[4]
         ships = fleet[6]
+        if ships <= 0:
+            fleets_to_remove.append(fleet)
+            continue
         speed = 1.0 + (max_speed - 1.0) * (math.log(ships) / math.log(1000)) ** 1.5
         speed = min(speed, max_speed)
         old_pos = (fleet[2], fleet[3])
