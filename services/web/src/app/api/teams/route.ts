@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { teams, teamMembers, ratings } from "@/lib/db/schema";
+import { teams, teamMembers, ratings, users } from "@/lib/db/schema";
 import { getSession } from "@/lib/get-session";
 import { eq } from "drizzle-orm";
 
@@ -90,7 +90,14 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const [row] = await db
+  const membership = await db.query.teamMembers.findFirst({
+    where: eq(teamMembers.userId, session.user.id),
+  });
+  if (!membership) {
+    return NextResponse.json({ error: "No team" }, { status: 404 });
+  }
+
+  const [team] = await db
     .select({
       id: teams.id,
       name: teams.name,
@@ -101,14 +108,26 @@ export async function GET(req: NextRequest) {
       createdAt: teams.createdAt,
       created_at: teams.createdAt,
     })
-    .from(teamMembers)
-    .innerJoin(teams, eq(teamMembers.teamId, teams.id))
-    .where(eq(teamMembers.userId, session.user.id))
+    .from(teams)
+    .where(eq(teams.id, membership.teamId))
     .limit(1);
 
-  if (!row) {
+  if (!team) {
     return NextResponse.json({ error: "No team" }, { status: 404 });
   }
 
-  return NextResponse.json(row);
+  const members = await db
+    .select({
+      userId: teamMembers.userId,
+      role: teamMembers.role,
+      joinedAt: teamMembers.joinedAt,
+      name: users.name,
+      email: users.email,
+      image: users.image,
+    })
+    .from(teamMembers)
+    .innerJoin(users, eq(teamMembers.userId, users.id))
+    .where(eq(teamMembers.teamId, team.id));
+
+  return NextResponse.json({ ...team, members });
 }

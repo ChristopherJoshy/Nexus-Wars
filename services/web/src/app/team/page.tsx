@@ -4,11 +4,21 @@ import { useEffect, useState } from "react";
 import { useSession, signIn } from "@/lib/auth-client";
 import { Button } from "@/components/ui/button";
 
+interface TeamMember {
+  userId: string;
+  role: string;
+  joinedAt: string;
+  name: string | null;
+  email: string | null;
+  image: string | null;
+}
+
 interface Team {
   id: string;
   name: string;
   team_code: string;
   owner_id: string | null;
+  members: TeamMember[];
 }
 
 export default function TeamPage() {
@@ -155,30 +165,44 @@ export default function TeamPage() {
       </div>
 
       {/* Team Members Section */}
-      <div className="space-y-4 pt-2 border-t border-border">
-        <h3 className="text-sm font-bold text-foreground">Team Members</h3>
+      {team && team.members && (
+        <div className="space-y-4 pt-2 border-t border-border">
+          <h3 className="text-sm font-bold text-foreground">Team Members</h3>
 
-        <div className="flex items-center gap-3 bg-muted border border-border p-3 rounded-lg max-w-sm">
-          {session.user.image ? (
-            <img
-              src={session.user.image}
-              alt={session.user.name || "Member Avatar"}
-              className="w-10 h-10 rounded-full object-cover border border-primary/50"
-            />
-          ) : (
-            <div className="w-10 h-10 rounded-full bg-primary/20 text-foreground font-bold flex items-center justify-center border border-primary">
-              {(session.user.name || "U")[0].toUpperCase()}
-            </div>
-          )}
+          <div className="space-y-2 max-w-sm">
+            {team.members.map((member) => (
+              <div
+                key={member.userId}
+                className="flex items-center gap-3 bg-muted border border-border p-3 rounded-lg"
+              >
+                {member.image ? (
+                  <img
+                    src={member.image}
+                    alt={member.name || "Member Avatar"}
+                    className="w-10 h-10 rounded-full object-cover border border-primary/50"
+                  />
+                ) : (
+                  <div className="w-10 h-10 rounded-full bg-primary/20 text-foreground font-bold flex items-center justify-center border border-primary">
+                    {(member.name || "U")[0].toUpperCase()}
+                  </div>
+                )}
 
-          <div>
-            <div className="text-xs font-semibold text-foreground">
-              {session.user.name || "Participant"} (You)
-            </div>
-            <div className="text-[11px] text-muted-foreground">Team Leader</div>
+                <div>
+                  <div className="text-xs font-semibold text-foreground">
+                    {member.name || "Participant"}
+                    {member.userId === session.user.id && (
+                      <span className="text-muted-foreground"> (You)</span>
+                    )}
+                  </div>
+                  <div className="text-[11px] text-muted-foreground">
+                    {member.role === "owner" ? "Team Leader" : "Member"}
+                  </div>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
-      </div>
+      )}
 
       {/* Invite Code */}
       {team && (
