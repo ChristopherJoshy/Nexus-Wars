@@ -1,17 +1,22 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { submissionRatings, teams, teamMembers, users, submissions } from "@/lib/db/schema";
-import { eq, desc, sql } from "drizzle-orm";
+import { submissionRatings, teams, teamMembers, users } from "@/lib/db/schema";
+import { eq, desc } from "drizzle-orm";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
-    // 1. Fetch each team's highest-rated submission
+    const allTeams = await db
+      .select({
+        teamId: teams.id,
+        teamName: teams.name,
+      })
+      .from(teams);
+
     const topSubs = await db
       .select({
         teamId: submissionRatings.teamId,
-        teamName: teams.name,
         rating: submissionRatings.rating,
         rd: submissionRatings.rd,
         wins: submissionRatings.wins,
@@ -22,22 +27,15 @@ export async function GET() {
         bestSubmissionId: submissionRatings.submissionId,
       })
       .from(submissionRatings)
-      .innerJoin(teams, eq(submissionRatings.teamId, teams.id))
       .orderBy(submissionRatings.teamId, desc(submissionRatings.rating));
 
-    // distinct on team_id keeps highest rating per team
-    // drizzle doesn't have DISTINCT ON, so we deduplicate in JS
-    const boardMap = new Map<string, typeof topSubs[0]>();
+    const bestByTeam = new Map<string, typeof topSubs[0]>();
     for (const row of topSubs) {
       if (!row.teamId) continue;
-      if (!boardMap.has(row.teamId)) {
-        boardMap.set(row.teamId, row);
-      }
+      if (!bestByTeam.has(row.teamId)) bestByTeam.set(row.teamId, row);
     }
-    const board = Array.from(boardMap.values()).sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0));
 
-    // 2. Fetch team members
-    const teamIds = board.map((b) => b.teamId);
+    const teamIds = allTeams.map((t) => t.teamId);
     let membersByTeam: Record<string, { name: string; image: string | null }[]> = {};
 
     if (teamIds.length > 0) {
@@ -60,23 +58,25 @@ export async function GET() {
       }, {} as Record<string, { name: string; image: string | null }[]>);
     }
 
-    // 3. Format result
-    const result = board.map((b) => {
-      const teamId = b.teamId ?? "";
-      return {
-        teamId: b.teamId,
-        teamName: b.teamName,
-        rating: Math.round((b.rating ?? 600) * 10) / 10,
-        rd: Math.round((b.rd ?? 350) * 10) / 10,
-        wins: b.wins ?? 0,
-        losses: b.losses ?? 0,
-        draws: b.draws ?? 0,
-        matchesPlayed: b.matchesPlayed ?? 0,
-        lastActivityAt: b.lastMatchAt || undefined,
-        bestSubmissionId: b.bestSubmissionId,
-        members: teamId ? (membersByTeam[teamId] || [{ name: b.teamName, image: null }]) : [{ name: b.teamName, image: null }],
-      };
-    });
+    const result = allTeams
+      .map((t) => {
+        const top = bestByTeam.get(t.teamId);
+        const teamId = t.teamId ?? "";
+        return {
+          teamId: t.teamId,
+          teamName: t.teamName,
+          rating: Math.round((top?.rating ?? 600) * 10) / 10,
+          rd: Math.round((top?.rd ?? 350) * 10) / 10,
+          wins: top?.wins ?? 0,
+          losses: top?.losses ?? 0,
+          draws: top?.draws ?? 0,
+          matchesPlayed: top?.matchesPlayed ?? 0,
+          lastActivityAt: top?.lastMatchAt || undefined,
+          bestSubmissionId: top?.bestSubmissionId || undefined,
+          members: teamId ? (membersByTeam[teamId] || [{ name: t.teamName, image: null }]) : [{ name: t.teamName, image: null }],
+        };
+      })
+      .sort((a, b) => (b.rating ?? 600) - (a.rating ?? 600));
 
     return NextResponse.json(result);
   } catch (error) {
