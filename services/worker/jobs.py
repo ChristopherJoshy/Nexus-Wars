@@ -12,7 +12,7 @@ Bot artifacts are extracted to a temp dir and run as a subprocess
 """
 import json
 import os
-import random
+import secrets
 import shutil
 import subprocess
 import sys
@@ -111,7 +111,7 @@ def run_validation(conn, submission_id):
     runner_a = rm.make_runner(bot_runner(workdir))
     runner_b = rm.make_runner("random")
     replay = rm.run_match([runner_a, runner_b], engine_config(),
-                           seed=random.randint(0, 2**31 - 1))
+                           seed=secrets.randbits(31))
 
     key = f"validation/{submission_id}.json"
     size = put_json(key, replay)

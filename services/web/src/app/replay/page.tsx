@@ -1,0 +1,752 @@
+"use client";
+
+import { useEffect, useState, useCallback, useRef, Suspense } from "react";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
+import {
+  ArrowLeft,
+  Filter,
+  Trophy,
+  RotateCcw,
+  SkipBack,
+  SkipForward,
+  Play,
+  Pause,
+  Copy,
+  Check,
+  Download,
+  Monitor,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { ReplayRenderer } from "@/components/replay/ReplayRenderer";
+import { useSession } from "@/lib/auth-client";
+import { animate } from "animejs";
+
+interface MatchItem {
+  id: string;
+  seed: number;
+  kind: string;
+  teamA: string;
+  teamB: string;
+  teamARating: number;
+  teamBRating: number;
+  teamAChange?: number;
+  teamBChange?: number;
+  winner: "a" | "b" | "draw";
+  winnerName: string | null;
+  scores: number[];
+  createdAt: string;
+  relativeTime: string;
+}
+
+interface StepData {
+  observation: {
+    planets: number[][];
+    fleets: number[][];
+    player: number;
+    step: number;
+  };
+  action: number[][][];
+  reward: number[];
+  status: string[];
+}
+
+interface ReplayData {
+  version: string;
+  engine: string;
+  seed: number;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  configuration: any;
+  players: { playerId: number }[];
+  steps: StepData[];
+  info: {
+    winner: number | null;
+    reason: string;
+    scores: number[];
+    durationMs: number;
+    steps: number;
+  };
+}
+
+function GameHistoryContent() {
+  const { data: session } = useSession();
+  const searchParams = useSearchParams();
+  
+  const teamId = searchParams.get("teamId");
+  const teamNameParam = searchParams.get("teamName");
+  const submissionId = searchParams.get("submissionId");
+  const artifactParam = searchParams.get("artifact");
+
+  const [matchList, setMatchList] = useState<MatchItem[]>([]);
+  const [selectedMatch, setSelectedMatch] = useState<MatchItem | null>(null);
+  const [replay, setReplay] = useState<ReplayData | null>(null);
+  
+  const [step, setStep] = useState(0);
+  const [playing, setPlaying] = useState(false);
+  const [speedMultiplier, setSpeedMultiplier] = useState<0.5 | 1 | 2 | 4>(1);
+  const [copied, setCopied] = useState(false);
+
+  // Responsive canvas size
+  const [canvasDim, setCanvasDim] = useState(580);
+  const canvasContainerRef = useRef<HTMLDivElement>(null);
+
+  // Telemetry Controls
+  const [showFleetNum, setShowFleetNum] = useState(true);
+  const [showProduction, setShowProduction] = useState(true);
+  const [fleetSizeFilter, setFleetSizeFilter] = useState<"all" | "small" | "medium" | "large">("all");
+
+  const sidebarRef = useRef<HTMLDivElement>(null);
+
+  const selectMatch = (m: MatchItem) => {
+    setSelectedMatch(m);
+    setStep(0);
+    setPlaying(false);
+  };
+
+  // ResizeObserver to calculate maximum available square dimension for canvas
+  useEffect(() => {
+    const el = canvasContainerRef.current;
+    if (!el) return;
+
+    const updateSize = () => {
+      const rect = el.getBoundingClientRect();
+      const available = Math.max(320, Math.min(rect.width - 24, rect.height - 24));
+      setCanvasDim(Math.floor(available));
+    };
+
+    updateSize();
+    const observer = new ResizeObserver(updateSize);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  // Fetch Game History Match List
+  useEffect(() => {
+    let url = "/api/replays";
+    const queryParts: string[] = [];
+    if (teamId) queryParts.push(`teamId=${encodeURIComponent(teamId)}`);
+    if (submissionId) queryParts.push(`submissionId=${encodeURIComponent(submissionId)}`);
+    if (queryParts.length > 0) url += `?${queryParts.join("&")}`;
+
+    fetch(url)
+      .then((res) => {
+        if (!res.ok) throw new Error("Fetch failed");
+        return res.json();
+      })
+      .then((data: MatchItem[]) => {
+        setMatchList(data);
+        if (data.length > 0) {
+          setSelectedMatch(data[0]);
+        }
+      })
+      .catch(() => {
+        setMatchList([]);
+      });
+  }, [teamId, submissionId, teamNameParam]);
+
+  // Fetch Replay Data when selectedMatch changes
+  useEffect(() => {
+    if (!selectedMatch) return;
+
+    const headers: Record<string, string> = {};
+    if (session?.token) headers["Authorization"] = `Bearer ${session.token}`;
+
+    fetch(`/api/replays/${selectedMatch.id}`, { headers })
+      .then((res) => {
+        if (!res.ok) throw new Error("Replay fetch error");
+        return res.json();
+      })
+      .then((data: ReplayData) => {
+        setReplay(data);
+      })
+      .catch(() => {
+        setReplay(null);
+      });
+  }, [selectedMatch, session]);
+
+  // Sidebar Entrance Animation
+  useEffect(() => {
+    if (sidebarRef.current && matchList.length > 0) {
+      animate(sidebarRef.current.querySelectorAll(".history-item-anim"), {
+        opacity: [0, 1],
+        translateX: [-12, 0],
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        delay: (_el: any, i = 0) => i * 40,
+        duration: 500,
+        ease: "outQuint",
+      });
+    }
+  }, [matchList]);
+
+  // Calculate max step by detecting complete elimination of either player
+  const maxStep = (() => {
+    if (!replay || !replay.steps || replay.steps.length === 0) return 0;
+
+    for (let i = 0; i < replay.steps.length; i++) {
+      const stepData = replay.steps[i];
+      const rawPlanets = stepData.observation?.planets || [];
+      const rawFleets = stepData.observation?.fleets || [];
+
+      let p0Total = 0;
+      let p1Total = 0;
+
+      for (const p of rawPlanets) {
+        const owner = p[1];
+        const ships = p[5] || 0;
+        if (owner === 0) p0Total += ships + 1;
+        else if (owner === 1) p1Total += ships + 1;
+      }
+
+      for (const f of rawFleets) {
+        const owner = f[1];
+        const ships = f[6] || 0;
+        if (owner === 0) p0Total += ships + 1;
+        else if (owner === 1) p1Total += ships + 1;
+      }
+
+      // If either player is completely eliminated (0 planets, 0 ships, 0 fleets)
+      if (i > 0 && (p0Total === 0 || p1Total === 0)) {
+        return i;
+      }
+    }
+
+    return replay.steps.length - 1;
+  })();
+
+  const advance = useCallback(() => {
+    setStep((s) => (s < maxStep ? s + 1 : (setPlaying(false), s)));
+  }, [maxStep]);
+
+  // Playback Step Timing (ms per step: 0.5x=300ms, 1x=150ms, 2x=75ms, 4x=35ms)
+  useEffect(() => {
+    if (!playing || !replay) return;
+    const speedMap: Record<number, number> = { 0.5: 300, 1: 150, 2: 75, 4: 35 };
+    const intervalMs = speedMap[speedMultiplier] || 150;
+    const id = setInterval(advance, intervalMs);
+    return () => clearInterval(id);
+  }, [playing, speedMultiplier, advance, replay]);
+
+  const copySeed = () => {
+    if (!selectedMatch) return;
+    navigator.clipboard.writeText(String(selectedMatch.seed));
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const downloadMatchJson = (e: React.MouseEvent, matchId: string) => {
+    e.stopPropagation();
+    const headers: Record<string, string> = {};
+    if (session?.token) headers["Authorization"] = `Bearer ${session.token}`;
+
+    fetch(`/api/replays/${matchId}`, { headers })
+      .then((res) => res.blob())
+      .then((blob) => {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `match-${matchId}.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+      })
+      .catch(() => {});
+  };
+
+  const currentStep = replay ? replay.steps[Math.min(step, replay.steps.length - 1)] : null;
+
+  // Compute live match telemetry statistics from currentStep
+  const telemetry = (() => {
+    if (!currentStep) return null;
+
+    const rawPlanets = currentStep.observation?.planets || [];
+    const rawFleets = currentStep.observation?.fleets || [];
+
+    let p0Ships = 0, p1Ships = 0;
+    let p0Planets = 0, p1Planets = 0, neutralPlanets = 0;
+    let p0Prod = 0, p1Prod = 0;
+
+    for (const p of rawPlanets) {
+      const owner = p[1];
+      const ships = p[5] || 0;
+      const prod = p[6] || 0;
+
+      if (owner === 0) {
+        p0Ships += ships;
+        p0Planets += 1;
+        p0Prod += prod;
+      } else if (owner === 1) {
+        p1Ships += ships;
+        p1Planets += 1;
+        p1Prod += prod;
+      } else {
+        neutralPlanets += 1;
+      }
+    }
+
+    let p0FleetShips = 0, p1FleetShips = 0;
+    let p0FleetsCount = 0, p1FleetsCount = 0;
+
+    for (const f of rawFleets) {
+      const owner = f[1];
+      const ships = f[6] || 0;
+      if (owner === 0) {
+        p0Ships += ships;
+        p0FleetShips += ships;
+        p0FleetsCount += 1;
+      } else if (owner === 1) {
+        p1Ships += ships;
+        p1FleetShips += ships;
+        p1FleetsCount += 1;
+      }
+    }
+
+    const totalShips = Math.max(1, p0Ships + p1Ships);
+    const p0ShipPct = Math.round((p0Ships / totalShips) * 100);
+    const p1ShipPct = Math.round((p1Ships / totalShips) * 100);
+
+    return {
+      p0Ships,
+      p1Ships,
+      p0Planets,
+      p1Planets,
+      neutralPlanets,
+      p0Prod,
+      p1Prod,
+      p0FleetShips,
+      p1FleetShips,
+      p0FleetsCount,
+      p1FleetsCount,
+      p0ShipPct,
+      p1ShipPct,
+    };
+  })();
+
+  const returnLink = submissionId ? "/submit" : "/leaderboard";
+  const returnLabel = submissionId ? "Submissions" : "Leaderboard";
+
+  return (
+    <>
+      {/* MOBILE FALLBACK (Hides complex 2D canvas on small mobile screens) */}
+      <div className="lg:hidden flex flex-col items-center justify-center min-h-[60vh] p-6 text-center space-y-4 max-w-md mx-auto font-mono">
+        <div className="p-4 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-700">
+          <Monitor className="w-8 h-8" />
+        </div>
+        <h2 className="text-lg font-bold text-foreground uppercase tracking-tight">
+          [ DESKTOP_REQUIRED ]
+        </h2>
+        <p className="text-xs text-muted-foreground leading-relaxed">
+          The 2D interactive space telemetry replay visualizer requires a larger screen. Please switch to a desktop or laptop computer to view match replays.
+        </p>
+        <Link
+          href={returnLink}
+          className="nexus-pill bg-primary hover:bg-primary/90 text-primary-foreground font-bold px-5 py-2 text-xs"
+        >
+          Return to {returnLabel}
+        </Link>
+      </div>
+
+      {/* DESKTOP REPLAY WORKSPACE (Visible on lg: and larger screens) */}
+      <div className="hidden lg:flex flex-col lg:flex-row h-[calc(100vh-6.5rem)] -my-5 -mx-4 sm:-mx-6 overflow-hidden bg-background text-foreground transition-colors duration-200 border-t border-border">
+      {/* LEFT SIDEBAR: GAME HISTORY / EPISODES */}
+      <aside className="w-full lg:w-72 border-r border-border bg-card flex flex-col shrink-0 overflow-hidden">
+        {/* Sidebar Header */}
+        <div className="p-3 border-b border-border flex items-center justify-between bg-muted/30">
+          <div className="flex items-center gap-2">
+            <Link
+              href={returnLink}
+              className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+              title={`Return to ${returnLabel}`}
+            >
+              <ArrowLeft className="w-4 h-4" />
+            </Link>
+            <h2 className="font-mono text-xs font-bold tracking-tight text-foreground uppercase truncate max-w-[180px]">
+              {artifactParam ? `Episodes: ${artifactParam}` : teamNameParam ? `Team: ${teamNameParam}` : "Game History"}
+            </h2>
+          </div>
+        </div>
+
+        {/* Subheader Filters */}
+        <div className="p-2.5 border-b border-border flex items-center justify-between text-xs font-mono bg-muted/10">
+          <div>
+            <span className="text-foreground font-bold uppercase text-[11px]">Match History</span>
+            <div className="text-[10px] text-muted-foreground">{matchList.length} matches recorded</div>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-6 px-2 text-[10px] font-mono border-border hover:bg-muted gap-1"
+            >
+              <Filter className="w-3 h-3" />
+              Filter
+            </Button>
+          </div>
+        </div>
+
+        {/* Match History List */}
+        <div ref={sidebarRef} className="flex-1 overflow-y-auto p-2.5 space-y-2 font-mono">
+          {matchList.map((m) => {
+            const isSelected = selectedMatch?.id === m.id;
+            return (
+              <div
+                key={m.id}
+                onClick={() => selectMatch(m)}
+                className={`history-item-anim w-full text-left p-2.5 rounded-md border transition-all cursor-pointer flex items-center justify-between gap-2 ${
+                  isSelected
+                    ? "bg-secondary border-primary/60 shadow-xs"
+                    : "bg-background/60 border-border/80 hover:bg-muted/50 hover:border-border"
+                }`}
+              >
+                <div className="flex-1 min-w-0">
+                  {/* Team A (Blue) */}
+                  <div className="flex items-center justify-between text-xs mb-1">
+                    <div className="flex items-center gap-1.5 truncate max-w-[150px]">
+                      <span className="w-2 h-2 rounded-full bg-blue-600 shrink-0" />
+                      <span className={`truncate font-semibold text-[11px] ${m.winner === "a" ? "text-foreground" : "text-muted-foreground"}`}>
+                        {m.teamA}
+                      </span>
+                      {m.winner === "a" && (
+                        <Trophy className="w-3 h-3 text-amber-600 shrink-0" />
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Team B (Orange) */}
+                  <div className="flex items-center justify-between text-xs">
+                    <div className="flex items-center gap-1.5 truncate max-w-[150px]">
+                      <span className="w-2 h-2 rounded-full bg-orange-600 shrink-0" />
+                      <span className={`truncate font-semibold text-[11px] ${m.winner === "b" ? "text-foreground" : "text-muted-foreground"}`}>
+                        {m.teamB}
+                      </span>
+                      {m.winner === "b" && (
+                        <Trophy className="w-3 h-3 text-amber-600 shrink-0" />
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={(e) => downloadMatchJson(e, m.id)}
+                  className="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors shrink-0 cursor-pointer"
+                  title="Download match JSON data"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      </aside>
+
+      {/* RIGHT MAIN GAME AREA */}
+      <main className="flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden bg-background">
+        {/* Top Match Score Bar & Telemetry Toggles */}
+        {selectedMatch && (
+          <div className="p-2.5 px-4 border-b border-border bg-card flex flex-wrap items-center justify-between gap-3 text-xs font-mono shrink-0">
+            {/* Teams & Winner Badges with Rating Change (+15 / -15) */}
+            {(() => {
+              const winner = selectedMatch.winner;
+              const isDraw = winner === "draw" || !winner;
+              const isWinA = winner === "a";
+              const isWinB = winner === "b";
+
+              const changeA = selectedMatch.teamAChange ?? (isDraw ? 0 : isWinA ? 15 : -15);
+              const changeB = selectedMatch.teamBChange ?? (isDraw ? 0 : isWinB ? 15 : -15);
+
+              const formatDiff = (val: number) => (val > 0 ? `(+${val})` : `(${val})`);
+
+              return (
+                <div className="flex items-center gap-3">
+                  <div
+                    className={`px-2.5 py-1 rounded border text-[11px] font-bold flex items-center gap-1.5 ${
+                      isDraw
+                        ? "bg-muted text-muted-foreground border-border"
+                        : isWinA
+                          ? "bg-blue-500/15 text-blue-700 border-blue-500/30"
+                          : "bg-destructive/15 text-destructive border-destructive/30"
+                    }`}
+                  >
+                    <span className="w-2 h-2 rounded-full bg-blue-600 shrink-0" />
+                    [{isDraw ? "Draw" : isWinA ? "Win" : "Loss"}] {selectedMatch.teamA} {formatDiff(changeA)}
+                  </div>
+
+                  <span className="text-muted-foreground font-bold">vs</span>
+
+                  <div
+                    className={`px-2.5 py-1 rounded border text-[11px] font-bold flex items-center gap-1.5 ${
+                      isDraw
+                        ? "bg-muted text-muted-foreground border-border"
+                        : isWinB
+                          ? "bg-orange-500/15 text-orange-700 border-orange-500/30"
+                          : "bg-destructive/15 text-destructive border-destructive/30"
+                    }`}
+                  >
+                    <span className="w-2 h-2 rounded-full bg-orange-600 shrink-0" />
+                    [{isDraw ? "Draw" : isWinB ? "Win" : "Loss"}] {selectedMatch.teamB} {formatDiff(changeB)}
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Telemetry Display Toggles */}
+            <div className="flex items-center gap-1.5">
+              <Button
+                variant={showFleetNum ? "default" : "outline"}
+                size="sm"
+                onClick={() => setShowFleetNum(!showFleetNum)}
+                className="h-6 px-2 text-[10px] font-mono border-border"
+              >
+                Fleet #
+              </Button>
+              <Button
+                variant={showProduction ? "default" : "outline"}
+                size="sm"
+                onClick={() => setShowProduction(!showProduction)}
+                className="h-6 px-2 text-[10px] font-mono border-border"
+              >
+                Production
+              </Button>
+              <div className="flex items-center border border-border rounded-md overflow-hidden p-0.5 bg-muted/40">
+                {(["all", "small", "medium", "large"] as const).map((filter) => (
+                  <button
+                    key={filter}
+                    onClick={() => setFleetSizeFilter(filter)}
+                    type="button"
+                    className={`px-1.5 py-0.5 text-[10px] font-mono uppercase rounded capitalize transition-all cursor-pointer ${
+                      fleetSizeFilter === filter
+                        ? "bg-primary text-primary-foreground font-bold shadow-xs"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    {filter}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Center Space Canvas Visualizer + Side Telemetry Cards (Fills Wasted Space) */}
+        <div className="flex-1 min-h-0 flex items-center justify-center gap-4 p-3 bg-background relative overflow-hidden">
+          {/* Left Telemetry Panel (Player 0 / Blue) */}
+          {telemetry && selectedMatch && (
+            <div className="hidden xl:flex flex-col gap-3 w-56 shrink-0 font-mono text-xs p-3.5 bg-card border border-border rounded-lg shadow-xs">
+              <div className="flex items-center gap-1.5 pb-2 border-b border-border">
+                <span className="w-2.5 h-2.5 rounded-full bg-blue-600 shrink-0" />
+                <span className="font-bold text-foreground truncate">{selectedMatch.teamA}</span>
+              </div>
+
+              <div className="space-y-1">
+                <div className="flex justify-between text-[11px]">
+                  <span className="text-muted-foreground">Armada Share</span>
+                  <span className="font-bold text-blue-600">{telemetry.p0ShipPct}%</span>
+                </div>
+                <div className="w-full h-2 bg-muted rounded-full overflow-hidden">
+                  <div className="h-full bg-blue-600 transition-all duration-300" style={{ width: `${telemetry.p0ShipPct}%` }} />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 pt-1">
+                <div className="bg-muted/50 p-2 rounded border border-border/60">
+                  <div className="text-[10px] text-muted-foreground uppercase">Total Ships</div>
+                  <div className="text-sm font-bold text-foreground">{telemetry.p0Ships}</div>
+                </div>
+                <div className="bg-muted/50 p-2 rounded border border-border/60">
+                  <div className="text-[10px] text-muted-foreground uppercase">Income</div>
+                  <div className="text-sm font-bold text-emerald-700">+{telemetry.p0Prod}/t</div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div className="bg-muted/50 p-2 rounded border border-border/60">
+                  <div className="text-[10px] text-muted-foreground uppercase">Planets</div>
+                  <div className="text-sm font-bold text-foreground">{telemetry.p0Planets}</div>
+                </div>
+                <div className="bg-muted/50 p-2 rounded border border-border/60">
+                  <div className="text-[10px] text-muted-foreground uppercase">In Transit</div>
+                  <div className="text-sm font-bold text-blue-600">{telemetry.p0FleetShips} <span className="text-[10px] font-normal">({telemetry.p0FleetsCount})</span></div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Main Square Board Canvas */}
+          <div ref={canvasContainerRef} className="flex-1 flex items-center justify-center min-w-0 h-full">
+            {currentStep ? (
+              <ReplayRenderer
+                step={currentStep}
+                width={canvasDim}
+                height={canvasDim}
+                showFleetNum={showFleetNum}
+                showProduction={showProduction}
+                fleetSizeFilter={fleetSizeFilter}
+              />
+            ) : (
+              <div className="flex flex-col items-center justify-center space-y-3 font-mono">
+                <div className="w-8 h-8 border border-primary border-t-transparent rounded-full animate-spin" />
+                <span className="text-xs text-muted-foreground uppercase tracking-widest animate-pulse">
+                  INITIALIZING SPACE TELEMETRY...
+                </span>
+              </div>
+            )}
+          </div>
+
+          {/* Right Telemetry Panel (Player 1 / Orange) */}
+          {telemetry && selectedMatch && (
+            <div className="hidden xl:flex flex-col gap-3 w-56 shrink-0 font-mono text-xs p-3.5 bg-card border border-border rounded-lg shadow-xs">
+              <div className="flex items-center gap-1.5 pb-2 border-b border-border">
+                <span className="w-2.5 h-2.5 rounded-full bg-orange-600 shrink-0" />
+                <span className="font-bold text-foreground truncate">{selectedMatch.teamB}</span>
+              </div>
+
+              <div className="space-y-1">
+                <div className="flex justify-between text-[11px]">
+                  <span className="text-muted-foreground">Armada Share</span>
+                  <span className="font-bold text-orange-600">{telemetry.p1ShipPct}%</span>
+                </div>
+                <div className="w-full h-2 bg-muted rounded-full overflow-hidden">
+                  <div className="h-full bg-orange-600 transition-all duration-300" style={{ width: `${telemetry.p1ShipPct}%` }} />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 pt-1">
+                <div className="bg-muted/50 p-2 rounded border border-border/60">
+                  <div className="text-[10px] text-muted-foreground uppercase">Total Ships</div>
+                  <div className="text-sm font-bold text-foreground">{telemetry.p1Ships}</div>
+                </div>
+                <div className="bg-muted/50 p-2 rounded border border-border/60">
+                  <div className="text-[10px] text-muted-foreground uppercase">Income</div>
+                  <div className="text-sm font-bold text-emerald-700">+{telemetry.p1Prod}/t</div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div className="bg-muted/50 p-2 rounded border border-border/60">
+                  <div className="text-[10px] text-muted-foreground uppercase">Planets</div>
+                  <div className="text-sm font-bold text-foreground">{telemetry.p1Planets}</div>
+                </div>
+                <div className="bg-muted/50 p-2 rounded border border-border/60">
+                  <div className="text-[10px] text-muted-foreground uppercase">In Transit</div>
+                  <div className="text-sm font-bold text-orange-600">{telemetry.p1FleetShips} <span className="text-[10px] font-normal">({telemetry.p1FleetsCount})</span></div>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Bottom Playback Controls Bar */}
+        {selectedMatch && (
+          <div className="p-2.5 px-4 border-t border-border bg-card flex flex-wrap items-center gap-4 text-xs font-mono shrink-0">
+            {/* Copy Seed */}
+            <button
+              onClick={copySeed}
+              type="button"
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-muted/60 border border-border hover:bg-muted text-foreground transition-colors cursor-pointer text-[11px]"
+              title="Click to copy match seed"
+            >
+              <span>Seed: {selectedMatch.seed}</span>
+              {copied ? (
+                <Check className="w-3.5 h-3.5 text-emerald-600" />
+              ) : (
+                <Copy className="w-3.5 h-3.5 text-muted-foreground" />
+              )}
+            </button>
+
+            {/* Playback Step Control Buttons */}
+            <div className="flex items-center gap-1">
+              <Button
+                variant="outline"
+                size="icon-sm"
+                onClick={() => setStep(0)}
+                disabled={step === 0}
+                title="Restart Replay"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+              </Button>
+              <Button
+                variant="outline"
+                size="icon-sm"
+                onClick={() => setStep((s) => Math.max(0, s - 1))}
+                disabled={step === 0}
+                title="Step Back"
+              >
+                <SkipBack className="w-3.5 h-3.5" />
+              </Button>
+              <Button
+                variant="default"
+                size="icon-sm"
+                onClick={() => setPlaying(!playing)}
+                title={playing ? "Pause" : "Play"}
+              >
+                {playing ? (
+                  <Pause className="w-3.5 h-3.5" />
+                ) : (
+                  <Play className="w-3.5 h-3.5 ml-0.5" />
+                )}
+              </Button>
+              <Button
+                variant="outline"
+                size="icon-sm"
+                onClick={() => setStep((s) => Math.min(maxStep, s + 1))}
+                disabled={step === maxStep}
+                title="Step Forward"
+              >
+                <SkipForward className="w-3.5 h-3.5" />
+              </Button>
+            </div>
+
+            {/* Scrubber Range Slider */}
+            <div className="flex-1 flex items-center gap-3 min-w-[200px]">
+              <input
+                type="range"
+                min={0}
+                max={maxStep}
+                value={step}
+                onChange={(e) => setStep(Number(e.target.value))}
+                className="flex-1 accent-primary h-1.5 rounded-lg bg-muted border-none cursor-pointer"
+              />
+              <span className="text-[11px] text-muted-foreground w-16 text-right font-bold">
+                {step} / {maxStep}
+              </span>
+            </div>
+
+            {/* Speed Multiplier Select (0.5x, 1x, 2x, 4x) */}
+            <div className="flex items-center gap-1 border border-border rounded-md p-0.5 bg-muted/40">
+              {([0.5, 1, 2, 4] as const).map((spd) => (
+                <button
+                  key={spd}
+                  onClick={() => setSpeedMultiplier(spd)}
+                  type="button"
+                  className={`px-2 py-0.5 text-[10px] font-mono rounded transition-all cursor-pointer ${
+                    speedMultiplier === spd
+                      ? "bg-primary text-primary-foreground font-bold"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  {spd}x
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </main>
+    </div>
+  </>
+);
+}
+
+export default function GameHistoryPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex flex-col items-center justify-center min-h-[50vh] space-y-3 font-mono">
+        <div className="w-8 h-8 border border-primary border-t-transparent rounded-full animate-spin" />
+        <span className="text-xs text-muted-foreground uppercase tracking-widest animate-pulse">
+          LOADING MATCH REPLAYS...
+        </span>
+      </div>
+    }>
+      <GameHistoryContent />
+    </Suspense>
+  );
+}
+

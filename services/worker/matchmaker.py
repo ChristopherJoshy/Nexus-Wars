@@ -15,7 +15,7 @@ Key properties (inspired by Orbit Wars / Kaggle sim-comps):
 """
 import json
 import os
-import random
+import secrets
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "engine", "nexus_wars"))
@@ -24,7 +24,6 @@ from db import get_conn, execute, execute_returning, query
 from jobs import engine_config
 
 MATCHMAKER_LOCK = 87349201
-RECENT_WINDOW_HOURS = 2
 MAX_RATING_GAP = 400
 TEAM_COOLDOWN_MINUTES = 5
 MAX_MATCHES_PER_CYCLE = 8
@@ -40,11 +39,13 @@ def _release_lock(conn):
 
 
 def _recently_matched(conn, ta, tb):
+    # Random re-match window 1-100 minutes per call (cryptographically random)
+    min_window = secrets.randbelow(100) + 1
     rows = execute_returning(conn,
         "SELECT 1 FROM matches "
         "WHERE ((team_a_id=%s AND team_b_id=%s) OR (team_a_id=%s AND team_b_id=%s)) "
-        "AND created_at > now() - (%s::text || ' hours')::interval LIMIT 1",
-        (ta, tb, tb, ta, RECENT_WINDOW_HOURS))
+        "AND created_at > now() - (%s::text || ' minutes')::interval LIMIT 1",
+        (ta, tb, tb, ta, min_window))
     return bool(rows)
 
 
@@ -71,7 +72,7 @@ def _in_cooldown(conn, team_id):
 
 def create_match(conn, a, b):
     """a/b are (team_id, submission_id). Creates match + job row."""
-    seed = random.randint(0, 2**31 - 1)
+    seed = secrets.randbits(31)
     mid = execute_returning(conn,
         "INSERT INTO matches(team_a_id, team_b_id, submission_a_id, "
         "submission_b_id, seed, status, configuration_json, kind) "
@@ -137,7 +138,7 @@ def _enqueue_locked(conn, limit):
             gap = abs(eligible[i][2] - eligible[j][2])
             if gap > MAX_RATING_GAP:
                 continue
-            if best is None or gap < best_gap or (gap == best_gap and random.random() < 0.5):
+            if best is None or gap < best_gap or (gap == best_gap and secrets.randbelow(2) == 0):
                 best = j
                 best_gap = gap
         if best is not None:

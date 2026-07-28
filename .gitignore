@@ -1,7 +1,10 @@
 # Dependencies
 node_modules/
+
+# Python
 __pycache__/
 *.pyc
+.pytest_cache/
 
 # Environment
 .env
@@ -13,6 +16,15 @@ deploy/nexus_minio/
 
 # Firebase
 nexuswars2026-firebase-adminsdk-*.json
+
+# Agent / AI tooling
+.agents/
+.mimocode/
+.opencode/
+.learnings/
+AGENTS.md
+AGENTS_STATE.md
+tasks.md
 
 # Test bots (not part of the project)
 test-bots/

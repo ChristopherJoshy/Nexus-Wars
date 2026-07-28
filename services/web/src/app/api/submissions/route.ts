@@ -1,0 +1,135 @@
+import { NextRequest, NextResponse } from "next/server";
+import { db } from "@/lib/db";
+import { submissions, teamMembers, jobs, settings } from "@/lib/db/schema";
+import { getSession } from "@/lib/get-session";
+import { eq, sql, and, gte } from "drizzle-orm";
+import { getS3, S3_BUCKET, PutObjectCommand } from "@/lib/s3";
+import { randomUUID } from "crypto";
+
+const MAX_SUBMISSIONS_PER_DAY = 5;
+
+export async function POST(req: NextRequest) {
+  const session = await getSession(req);
+  if (!session?.user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const membership = await db.query.teamMembers.findFirst({
+    where: eq(teamMembers.userId, session.user.id),
+  });
+  if (!membership) {
+    return NextResponse.json({ error: "No team" }, { status: 400 });
+  }
+
+  const paused = await db.query.settings.findFirst({
+    where: eq(settings.key, "submissions_paused"),
+  });
+  if (paused && (paused.value === "true" || paused.value === true)) {
+    return NextResponse.json(
+      { error: "Submissions are currently paused by the admin." },
+      { status: 503 }
+    );
+  }
+
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+
+  const [countResult] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(submissions)
+    .where(
+      and(
+        eq(submissions.teamId, membership.teamId),
+        gte(submissions.createdAt, todayStart)
+      )
+    );
+  if ((countResult?.count ?? 0) >= MAX_SUBMISSIONS_PER_DAY) {
+    return NextResponse.json(
+      {
+        error: `Maximum of ${MAX_SUBMISSIONS_PER_DAY} submissions per team per day reached. Try again tomorrow.`,
+        code: "SUBMISSION_LIMIT",
+      },
+      { status: 429 }
+    );
+  }
+
+  const formData = await req.formData();
+  const file = formData.get("file") as File | null;
+  if (!file) {
+    return NextResponse.json({ error: "No file" }, { status: 400 });
+  }
+
+  if (!file.name.endsWith(".py")) {
+    return NextResponse.json(
+      { error: "Only single .py files are accepted" },
+      { status: 400 }
+    );
+  }
+
+  const subId = randomUUID();
+  const artifactKey = `submissions/${membership.teamId}/${subId}/${file.name}`;
+
+  const s3 = getS3();
+  if (s3) {
+    const buffer = Buffer.from(await file.arrayBuffer());
+    await s3.send(
+      new PutObjectCommand({
+        Bucket: S3_BUCKET,
+        Key: artifactKey,
+        Body: buffer,
+        ContentType: file.type || "application/octet-stream",
+      })
+    );
+  }
+
+  const [sub] = await db
+    .insert(submissions)
+    .values({
+      id: subId,
+      teamId: membership.teamId,
+      userId: session.user.id,
+      status: "queued",
+      artifactKey,
+      engineVersion: "2026.1.0",
+    })
+    .returning();
+
+  await db.insert(jobs).values({
+    type: "validate",
+    payloadJson: { submission_id: subId },
+    status: "pending",
+  });
+
+  return NextResponse.json(sub);
+}
+
+export async function GET(req: NextRequest) {
+  const session = await getSession(req);
+  if (!session?.user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const membership = await db.query.teamMembers.findFirst({
+    where: eq(teamMembers.userId, session.user.id),
+  });
+  if (!membership) {
+    return NextResponse.json([]);
+  }
+
+  const subs = await db.query.submissions.findMany({
+    where: eq(submissions.teamId, membership.teamId),
+    orderBy: (subs, { desc }) => [desc(subs.createdAt)],
+    limit: 20,
+  });
+
+  const [countResult] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(submissions)
+    .where(eq(submissions.teamId, membership.teamId));
+
+  return NextResponse.json({
+    submissions: subs,
+    totalCount: countResult?.count ?? 0,
+    maxSubmissions: MAX_SUBMISSIONS_PER_DAY,
+  });
+}
