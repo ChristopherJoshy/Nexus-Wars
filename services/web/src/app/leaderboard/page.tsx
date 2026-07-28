@@ -27,6 +27,7 @@ interface LeaderboardEntry {
   draws: number;
   matchesPlayed: number;
   lastActivityAt?: string | null;
+  bestSubmissionId?: string | null;
   members?: { name: string; image?: string | null }[];
 }
 
@@ -286,7 +287,11 @@ export default function LeaderboardPage() {
                     {/* View Episodes action button */}
                     <TableCell className="text-center">
                       <Link
-                        href={`/replay?teamId=${e.teamId}&teamName=${encodeURIComponent(e.teamName)}`}
+                        href={
+                          e.bestSubmissionId
+                            ? `/replay?submissionId=${e.bestSubmissionId}&teamName=${encodeURIComponent(e.teamName)}`
+                            : `/replay?teamId=${e.teamId}&teamName=${encodeURIComponent(e.teamName)}`
+                        }
                         className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-muted hover:bg-primary/10 border border-border hover:border-primary/40 text-xs font-medium text-foreground hover:text-primary transition-all cursor-pointer active:scale-95"
                         title={`Watch episodes for ${e.teamName}`}
                       >

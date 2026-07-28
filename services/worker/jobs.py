@@ -123,6 +123,13 @@ def run_validation(conn, submission_id):
             "reject_reason=%s, engine_version=%s WHERE id=%s",
             ("validated" if ok else "rejected", key, reason, ENGINE_VERSION, submission_id))
     if ok:
+        team = execute_returning(conn,
+            "SELECT team_id FROM submissions WHERE id=%s", (submission_id,))
+        if team:
+            execute(conn,
+                "INSERT INTO submission_ratings(submission_id, team_id) "
+                "VALUES(%s,%s) ON CONFLICT (submission_id) DO NOTHING",
+                (submission_id, team[0]))
         promote_submissions(conn, submission_id)
     return ok
 
@@ -185,7 +192,8 @@ def update_ratings(conn, team_a, team_b, winner, match_id, sub_a, sub_b):
     now = datetime.now(timezone.utc)
     is_draw = winner == "draw"
 
-    def load(tid):
+    # Update team ratings for backwards-compatible leaderboard
+    def load_team(tid):
         r = execute_returning(conn,
             "SELECT rating, rd, volatility, last_match_at, matches_played, "
             "wins, losses, draws FROM ratings WHERE team_id=%s FOR UPDATE", (tid,))
@@ -198,8 +206,8 @@ def update_ratings(conn, team_a, team_b, winner, match_id, sub_a, sub_b):
                 "wins, losses, draws FROM ratings WHERE team_id=%s FOR UPDATE", (tid,))
         return r
 
-    ra = load(team_a)
-    rb = load(team_b)
+    ra = load_team(team_a)
+    rb = load_team(team_b)
     dt_a = 0.0 if ra[3] is None else (now - ra[3]).total_seconds() / 86400.0
     dt_b = 0.0 if rb[3] is None else (now - rb[3]).total_seconds() / 86400.0
 
@@ -221,6 +229,59 @@ def update_ratings(conn, team_a, team_b, winner, match_id, sub_a, sub_b):
             (nb_r, nb_rd, nb_vol, now,
              1 if winner == 1 else 0, 1 if winner == 0 else 0,
              1 if is_draw else 0, team_b))
+
+    # Update per-submission ratings
+    def load_sub(sub_id):
+        return execute_returning(conn,
+            "SELECT rating, rd, volatility, last_match_at, matches_played, "
+            "wins, losses, draws FROM submission_ratings "
+            "WHERE submission_id=%s FOR UPDATE", (sub_id,))
+
+    sa = load_sub(sub_a)
+    sb = load_sub(sub_b)
+
+    def ensure_sub(sub_id, tid):
+        r = execute_returning(conn,
+            "SELECT rating, rd, volatility, last_match_at, matches_played, "
+            "wins, losses, draws FROM submission_ratings "
+            "WHERE submission_id=%s FOR UPDATE", (sub_id,))
+        if not r:
+            execute(conn,
+                "INSERT INTO submission_ratings(submission_id, team_id) "
+                "VALUES(%s,%s)", (sub_id, tid))
+            r = execute_returning(conn,
+                "SELECT rating, rd, volatility, last_match_at, matches_played, "
+                "wins, losses, draws FROM submission_ratings "
+                "WHERE submission_id=%s FOR UPDATE", (sub_id,))
+        return r
+
+    if not sa:
+        sa = ensure_sub(sub_a, team_a)
+    if not sb:
+        sb = ensure_sub(sub_b, team_b)
+
+    dt_sa = 0.0 if sa[3] is None else (now - sa[3]).total_seconds() / 86400.0
+    dt_sb = 0.0 if sb[3] is None else (now - sb[3]).total_seconds() / 86400.0
+
+    (nsa_r, nsa_rd, nsa_vol), (nsb_r, nsb_rd, nsb_vol) = rate_match(
+        sa[0], sa[1], sa[2], dt_sa, sb[0], sb[1], sb[2], dt_sb, score_a)
+
+    execute(conn,
+            "UPDATE submission_ratings SET rating=%s, rd=%s, volatility=%s, "
+            "last_match_at=%s, matches_played=matches_played+1, "
+            "wins=wins+%s, losses=losses+%s, draws=draws+%s "
+            "WHERE submission_id=%s",
+            (nsa_r, nsa_rd, nsa_vol, now,
+             1 if winner == 0 else 0, 1 if winner == 1 else 0,
+             1 if is_draw else 0, sub_a))
+    execute(conn,
+            "UPDATE submission_ratings SET rating=%s, rd=%s, volatility=%s, "
+            "last_match_at=%s, matches_played=matches_played+1, "
+            "wins=wins+%s, losses=losses+%s, draws=draws+%s "
+            "WHERE submission_id=%s",
+            (nsb_r, nsb_rd, nsb_vol, now,
+             1 if winner == 1 else 0, 1 if winner == 0 else 0,
+             1 if is_draw else 0, sub_b))
 
     for idx, (tid, sub, r_before, r_after, rd_after) in enumerate([
         (team_a, sub_a, ra[0], na_r, na_rd),

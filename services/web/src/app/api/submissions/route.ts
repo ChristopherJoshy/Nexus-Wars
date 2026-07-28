@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { submissions, teamMembers, jobs, settings } from "@/lib/db/schema";
+import { submissions, teamMembers, jobs, settings, submissionRatings } from "@/lib/db/schema";
 import { getSession } from "@/lib/get-session";
 import { eq, ne, sql, and, gte } from "drizzle-orm";
 import { getS3, S3_BUCKET, PutObjectCommand } from "@/lib/s3";
@@ -123,13 +123,46 @@ export async function GET(req: NextRequest) {
     limit: 20,
   });
 
+  const ratingsRows = await db
+    .select({
+      submissionId: submissionRatings.submissionId,
+      rating: submissionRatings.rating,
+      rd: submissionRatings.rd,
+      wins: submissionRatings.wins,
+      losses: submissionRatings.losses,
+      draws: submissionRatings.draws,
+      matchesPlayed: submissionRatings.matchesPlayed,
+    })
+    .from(submissionRatings)
+    .innerJoin(submissions, eq(submissionRatings.submissionId, submissions.id))
+    .where(eq(submissions.teamId, membership.teamId));
+
+  const ratingMap = new Map(
+    ratingsRows.map((r) => [r.submissionId, r])
+  );
+
   const [countResult] = await db
     .select({ count: sql<number>`count(*)::int` })
     .from(submissions)
     .where(eq(submissions.teamId, membership.teamId));
 
+  const enriched = subs.map((s) => {
+    const r = ratingMap.get(s.id) || null;
+    const filename = (s.artifactKey || "agent.py").split("/").pop() || "agent.py";
+    return {
+      ...s,
+      filename,
+      rating: r?.rating ?? null,
+      rd: r?.rd ?? null,
+      wins: r?.wins ?? 0,
+      losses: r?.losses ?? 0,
+      draws: r?.draws ?? 0,
+      matchesPlayed: r?.matchesPlayed ?? 0,
+    };
+  });
+
   return NextResponse.json({
-    submissions: subs,
+    submissions: enriched,
     totalCount: countResult?.count ?? 0,
     maxSubmissions: MAX_SUBMISSIONS_PER_DAY,
   });

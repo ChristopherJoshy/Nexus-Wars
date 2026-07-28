@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef } from "react";
 import Link from "next/link";
-import { CheckCircle2, AlertTriangle, Upload, Zap, Clock, Tv, Loader2 } from "lucide-react";
+import { CheckCircle2, AlertTriangle, Upload, Zap, Clock, Tv, Loader2, Trophy } from "lucide-react";
 import { useSession, signIn } from "@/lib/auth-client";
 import { Button } from "@/components/ui/button";
 import { animate } from "animejs";
@@ -43,6 +43,12 @@ interface Submission {
   createdAt?: string;
   created_at?: string;
   score?: number;
+  rating?: number | null;
+  rd?: number | null;
+  wins?: number;
+  losses?: number;
+  draws?: number;
+  matchesPlayed?: number;
 }
 
 interface SubmissionsResponse {
@@ -340,17 +346,18 @@ export default function SubmissionsPage() {
                 </div>
 
                 <div className="flex items-center gap-6">
-                  <span
-                    className={`px-2 py-0.5 rounded font-mono text-[10px] uppercase font-bold tracking-wider ${
-                      isError
-                        ? "bg-amber-100 text-amber-800 border border-amber-300"
-                        : isActive
-                          ? "bg-primary/10 text-primary border border-primary/30"
-                          : "bg-muted text-muted-foreground border border-border"
-                    }`}
-                  >
-                    {s.status}
-                  </span>
+                  {typeof s.rating === "number" && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-amber-500/10 border border-amber-500/20 text-[10px] font-mono text-amber-700 dark:text-amber-300 font-bold">
+                      <Trophy className="w-3 h-3 text-amber-600 shrink-0" />
+                      {s.rating.toFixed(1)}
+                    </span>
+                  )}
+
+                  {(s.matchesPlayed ?? 0) > 0 && (
+                    <span className="font-mono text-[10px] text-muted-foreground">
+                      {s.wins}-{s.losses}-{s.draws}
+                    </span>
+                  )}
 
                   <Link
                     href={`/replay?submissionId=${s.id}&artifact=${encodeURIComponent(filename)}`}

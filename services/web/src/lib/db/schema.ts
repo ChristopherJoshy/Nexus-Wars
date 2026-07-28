@@ -133,6 +133,21 @@ export const ratings = pgTable("ratings", {
   matchesPlayed: integer("matches_played").notNull().default(0),
 });
 
+export const submissionRatings = pgTable("submission_ratings", {
+  submissionId: uuid("submission_id")
+    .primaryKey()
+    .references(() => submissions.id, { onDelete: "cascade" }),
+  teamId: uuid("team_id").references(() => teams.id, { onDelete: "cascade" }),
+  rating: doublePrecision("rating").notNull().default(600),
+  rd: doublePrecision("rd").notNull().default(350),
+  volatility: doublePrecision("volatility").notNull().default(0.06),
+  lastMatchAt: timestamp("last_match_at", { withTimezone: true }),
+  wins: integer("wins").notNull().default(0),
+  losses: integer("losses").notNull().default(0),
+  draws: integer("draws").notNull().default(0),
+  matchesPlayed: integer("matches_played").notNull().default(0),
+});
+
 export const matches = pgTable(
   "matches",
   {

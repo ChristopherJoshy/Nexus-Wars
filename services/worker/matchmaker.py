@@ -25,7 +25,7 @@ from jobs import engine_config
 
 MATCHMAKER_LOCK = 87349201
 MAX_RATING_GAP = 400
-TEAM_COOLDOWN_MINUTES = 5
+TEAM_COOLDOWN_MINUTES = 1
 MAX_MATCHES_PER_CYCLE = 8
 
 
@@ -61,8 +61,8 @@ def _recently_matched(conn, ta, tb):
             (ta, tb, tb, ta))
         if last_match and last_match[0] and newest[0] > last_match[0]:
             return False  # newer submission than last match -> allow rematch
-    # Fall back to random window (1-100 min) to avoid rapid repeat pairings
-    min_window = secrets.randbelow(100) + 1
+    # Fall back to random window (1-10 min) to avoid rapid repeat pairings
+    min_window = secrets.randbelow(10) + 1
     rows = execute_returning(conn,
         "SELECT 1 FROM matches "
         "WHERE ((team_a_id=%s AND team_b_id=%s) OR (team_a_id=%s AND team_b_id=%s)) "
@@ -71,12 +71,13 @@ def _recently_matched(conn, ta, tb):
     return bool(rows)
 
 
-def _has_pending_match(conn, team_id):
+def _has_pending_match(conn, submission_id):
     rows = execute_returning(conn,
         "SELECT 1 FROM matches "
-        "WHERE (team_a_id=%s OR team_b_id=%s) AND status IN ('pending', 'running') "
+        "WHERE (submission_a_id=%s OR submission_b_id=%s) "
+        "AND status IN ('pending', 'running') "
         "LIMIT 1",
-        (team_id, team_id))
+        (submission_id, submission_id))
     return bool(rows)
 
 
@@ -118,20 +119,19 @@ def enqueue_matches(conn, limit=MAX_MATCHES_PER_CYCLE):
 
 def _enqueue_locked(conn, limit):
     rows = query(conn,
-        "SELECT DISTINCT ON (s.team_id) "
-        "  s.team_id, s.id, COALESCE(r.rating, 600.0), "
-        "  COALESCE(r.matches_played, 0) "
+        "SELECT s.team_id, s.id, COALESCE(sr.rating, 600.0), "
+        "  COALESCE(sr.matches_played, 0) "
         "FROM submissions s "
-        "LEFT JOIN ratings r ON r.team_id = s.team_id "
+        "LEFT JOIN submission_ratings sr ON sr.submission_id = s.id "
         "WHERE s.status = 'active' "
         "ORDER BY s.team_id, s.created_at DESC", ())
 
-    teams = [(r[0], r[1], float(r[2]), int(r[3])) for r in rows]
+    entries = [(r[0], r[1], float(r[2]), int(r[3])) for r in rows]
 
-    # 1. Filter: remove teams with pending/running matches or in cooldown.
+    # 1. Filter: remove submissions with pending/running matches or team in cooldown.
     eligible = []
-    for tid, sid, rating, played in teams:
-        if _has_pending_match(conn, tid):
+    for tid, sid, rating, played in entries:
+        if _has_pending_match(conn, sid):
             continue
         if _in_cooldown(conn, tid):
             continue
@@ -140,20 +140,25 @@ def _enqueue_locked(conn, limit):
     # 2. Sort: fewer matches played first (new teams get rapid feedback).
     eligible.sort(key=lambda x: (x[3], -x[2]))
 
-    # 3. Greedy best-fit pairing.
+    # 3. Greedy best-fit pairing; allow same-team different-submission rematches.
     created = 0
-    used = set()
+    used_subs = set()
+    used_teams = set()
     for i in range(len(eligible)):
         if created >= limit:
             break
-        tid_a = eligible[i][0]
-        if tid_a in used:
+        tid_a, sid_a, rating_a, played_a = eligible[i]
+        if sid_a in used_subs:
             continue
         best = None
         best_gap = None
         for j in range(i + 1, len(eligible)):
-            tid_b = eligible[j][0]
-            if tid_b in used or tid_a == tid_b:
+            tid_b, sid_b, rating_b, played_b = eligible[j]
+            if sid_b in used_subs:
+                continue
+            if tid_a == tid_b and sid_a != sid_b:
+                pass  # same team, different submission is allowed
+            elif tid_a == tid_b:
                 continue
             if _recently_matched(conn, tid_a, tid_b):
                 continue
@@ -164,8 +169,10 @@ def _enqueue_locked(conn, limit):
                 best = j
                 best_gap = gap
         if best is not None:
-            create_match(conn, eligible[i], eligible[best])
-            used.update({tid_a, eligible[best][0]})
+            tid_b, sid_b, rating_b, played_b = eligible[best]
+            create_match(conn, (tid_a, sid_a), (tid_b, sid_b))
+            used_subs.update({sid_a, sid_b})
+            used_teams.update({tid_a, tid_b})
             created += 1
 
     conn.commit()
