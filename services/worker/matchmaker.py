@@ -96,7 +96,7 @@ def enqueue_matches(conn, limit=MAX_MATCHES_PER_CYCLE):
 def _enqueue_locked(conn, limit):
     rows = query(conn,
         "SELECT DISTINCT ON (s.team_id) "
-        "  s.team_id, s.id, COALESCE(r.rating, 1500.0), "
+        "  s.team_id, s.id, COALESCE(r.rating, 600.0), "
         "  COALESCE(r.matches_played, 0) "
         "FROM submissions s "
         "LEFT JOIN ratings r ON r.team_id = s.team_id "

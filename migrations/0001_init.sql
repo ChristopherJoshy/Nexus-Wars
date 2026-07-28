@@ -58,7 +58,7 @@ CREATE INDEX idx_subs_team_time ON submissions(team_id, created_at);
 -- --------------------------------------------------------------------------
 CREATE TABLE ratings (
     team_id         UUID PRIMARY KEY REFERENCES teams(id) ON DELETE CASCADE,
-    rating          DOUBLE PRECISION NOT NULL DEFAULT 1500,
+    rating          DOUBLE PRECISION NOT NULL DEFAULT 600,
     rd              DOUBLE PRECISION NOT NULL DEFAULT 350,
     volatility      DOUBLE PRECISION NOT NULL DEFAULT 0.06,
     last_match_at   TIMESTAMPTZ,

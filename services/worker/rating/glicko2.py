@@ -18,15 +18,16 @@ VOL_DEFAULT = 0.06
 VOL_MIN = 0.01
 VOL_MAX = 0.5
 SCALE = 173.7178
+RATING_BASE = 600.0
 PERIODS_PER_DAY = 0.21436  # RD grows 60 -> 110 over one year of inactivity
 
 
 def _to_internal(rating, rd):
-    return (rating - 1500.0) / SCALE, rd / SCALE
+    return (rating - RATING_BASE) / SCALE, rd / SCALE
 
 
 def _from_internal(mu, phi):
-    return mu * SCALE + 1500.0, phi * SCALE
+    return mu * SCALE + RATING_BASE, phi * SCALE
 
 
 def _g(phi):
