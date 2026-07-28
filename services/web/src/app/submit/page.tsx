@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef } from "react";
 import Link from "next/link";
-import { CheckCircle2, AlertTriangle, Upload, Zap, Clock, Tv } from "lucide-react";
+import { CheckCircle2, AlertTriangle, Upload, Zap, Clock, Tv, Loader2 } from "lucide-react";
 import { useSession, signIn } from "@/lib/auth-client";
 import { Button } from "@/components/ui/button";
 import { animate } from "animejs";
@@ -246,12 +246,16 @@ export default function SubmissionsPage() {
           />
           <label
             htmlFor="bot-upload-file"
-            className={`inline-flex items-center gap-2 px-4 py-2 rounded-md bg-primary hover:bg-primary/90 text-primary-foreground font-sans font-semibold text-xs shadow-xs transition-all cursor-pointer ${
-              totalCount >= maxSubmissions ? "opacity-50 pointer-events-none" : ""
+            className={`inline-flex items-center gap-2 px-4 py-2 rounded-md bg-primary hover:bg-primary/90 text-primary-foreground font-sans font-semibold text-xs shadow-xs transition-all cursor-pointer active:scale-95 ${
+              totalCount >= maxSubmissions || uploading ? "opacity-60 pointer-events-none" : ""
             }`}
           >
-            <Upload className="w-4 h-4" />
-            <span>{uploading ? "Uploading..." : "Upload Bot (.py)"}</span>
+            {uploading ? (
+              <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+            ) : (
+              <Upload className="w-4 h-4 shrink-0" />
+            )}
+            <span>{uploading ? "Uploading Bot..." : "Upload Bot (.py)"}</span>
           </label>
         </div>
       </div>

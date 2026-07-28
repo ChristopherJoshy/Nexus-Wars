@@ -27,6 +27,7 @@ export default function TeamPage() {
   const [teamName, setTeamName] = useState("");
   const [joinCode, setJoinCode] = useState("");
   const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(false);
   const [savedSuccess, setSavedSuccess] = useState(false);
 
@@ -51,6 +52,7 @@ export default function TeamPage() {
   const saveTeamName = async () => {
     if (!session || !teamName) return;
     setError(false);
+    setSubmitting(true);
     try {
       const res = await fetch("/api/teams", {
         method: "POST",
@@ -70,12 +72,15 @@ export default function TeamPage() {
       }
     } catch {
       setError(true);
+    } finally {
+      setSubmitting(false);
     }
   };
 
   const joinTeam = async () => {
     if (!session) return;
     setError(false);
+    setSubmitting(true);
     try {
       const res = await fetch("/api/teams/join", {
         method: "POST",
@@ -94,6 +99,8 @@ export default function TeamPage() {
       }
     } catch {
       setError(true);
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -126,17 +133,22 @@ export default function TeamPage() {
   }
 
   return (
-    <div className="max-w-3xl space-y-8">
-      {/* Title Header */}
-      <div className="space-y-1">
-        <h2 className="text-2xl font-bold text-foreground">Your Team</h2>
-        <p className="text-xs text-muted-foreground leading-relaxed">
-          Everyone that competes in a Competition does so as a team &mdash; even if you&apos;re competing by yourself.
+    <div className="max-w-2xl space-y-6">
+      <div>
+        <h2 className="text-xl font-bold text-foreground">Team Management</h2>
+        <p className="text-xs text-muted-foreground mt-0.5">
+          Manage your team name or join an existing team via invite code.
         </p>
       </div>
 
+      {savedSuccess && (
+        <div className="bg-emerald-500/10 border border-emerald-500/30 text-emerald-700 dark:text-emerald-400 rounded-lg p-3 text-xs font-mono">
+          [ SUCCESS ] Team settings saved successfully.
+        </div>
+      )}
+
       {error && (
-        <div className="bg-red-500/10 border border-red-500/30 text-destructive rounded-lg p-3 text-xs">
+        <div className="bg-destructive/10 border border-destructive/30 text-destructive rounded-lg p-3 text-xs font-mono">
           [ ERROR ] An error occurred while saving team settings.
         </div>
       )}
@@ -230,33 +242,27 @@ export default function TeamPage() {
             placeholder="6-LETTER CODE"
             className="w-full bg-card border border-border focus:border-primary p-2.5 rounded-lg text-xs font-mono text-center uppercase tracking-widest text-foreground outline-none"
           />
-          <button
-            type="button"
+          <Button
             onClick={joinTeam}
-            disabled={joinCode.length !== 6}
+            loading={submitting}
+            disabled={joinCode.length !== 6 || submitting}
             className="w-full nexus-pill border border-border text-foreground hover:bg-muted justify-center py-2 text-xs"
           >
             Join Team
-          </button>
+          </Button>
         </div>
       )}
 
       {/* Save */}
       <div className="pt-4 border-t border-border flex items-center gap-3">
-        <button
-          type="button"
+        <Button
           onClick={saveTeamName}
-          disabled={!teamName}
+          loading={submitting}
+          disabled={!teamName || submitting}
           className="nexus-pill bg-primary hover:bg-primary/90 text-primary-foreground font-bold px-6 py-2 text-xs"
         >
-          Save Changes
-        </button>
-
-        {savedSuccess && (
-          <span className="text-xs text-emerald-700 font-medium animate-fade-in">
-            Team updated successfully!
-          </span>
-        )}
+          {team ? "Save Changes" : "Create Team"}
+        </Button>
       </div>
     </div>
   );

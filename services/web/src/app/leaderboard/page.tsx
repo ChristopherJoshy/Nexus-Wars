@@ -15,6 +15,8 @@ import { Button } from "@/components/ui/button";
 import { useSession } from "@/lib/auth-client";
 import { animate } from "animejs";
 
+import { Skeleton } from "@/components/ui/skeleton";
+
 interface LeaderboardEntry {
   teamId: string;
   teamName: string;
@@ -130,6 +132,7 @@ export default function LeaderboardPage() {
             variant="outline"
             size="sm"
             onClick={exportCSV}
+            disabled={loading || entries.length === 0}
             className="nexus-pill bg-muted border-border text-foreground hover:bg-accent text-xs"
           >
             <Download className="w-3.5 h-3.5" />
@@ -138,6 +141,7 @@ export default function LeaderboardPage() {
           <Button
             variant="outline"
             size="sm"
+            loading={loading}
             onClick={refreshLeaderboard}
             className="nexus-pill bg-muted border-border text-foreground hover:bg-accent text-xs"
           >
@@ -159,8 +163,6 @@ export default function LeaderboardPage() {
         />
       </div>
 
-
-
       {/* Leaderboard Table Container */}
       <div className="nexus-card overflow-x-auto">
         <Table>
@@ -179,75 +181,89 @@ export default function LeaderboardPage() {
             </TableRow>
           </TableHeader>
           <TableBody ref={tableRef}>
-            {filteredEntries.map((e, i) => {
-              const isTop3 = i < 3;
-              const relativeTimeStr = formatRelativeTime(e.lastActivityAt);
-
-              return (
-                <TableRow
-                  key={e.teamId}
-                  className={`table-row-anim opacity-0 border-b border-border hover:bg-muted/50 transition-colors relative ${
-                    isTop3 ? "border-l-4 border-l-amber-600" : ""
-                  }`}
-                >
-                  {/* Rank */}
-                  <TableCell className="font-mono text-xs text-center text-muted-foreground font-bold">{i + 1}</TableCell>
-
-                  {/* Team */}
-                  <TableCell className="font-sans text-xs font-semibold text-foreground">{e.teamName}</TableCell>
-
-                  {/* Members */}
-                  <TableCell className="text-center">
-                    <div className="flex items-center justify-center -space-x-1.5">
-                      {(e.members || []).map((m, idx) => (
-                        <img
-                          key={idx}
-                          src={m.image || `https://api.dicebear.com/7.x/identicon/svg?seed=${encodeURIComponent(m.name)}`}
-                          alt={m.name}
-                          className="w-6 h-6 rounded-full border border-background object-cover"
-                          title={m.name}
-                        />
-                      ))}
-                    </div>
-                  </TableCell>
-
-                  {/* Rating */}
-                  <TableCell className="font-mono text-xs font-bold text-right text-foreground">
-                    {e.rating.toFixed(1)}
-                  </TableCell>
-
-                  {/* Record (W-L-D) */}
-                  <TableCell className="font-mono text-xs text-center text-muted-foreground">
-                    {e.wins}-{e.losses}-{e.draws}
-                  </TableCell>
-
-                  {/* Last activity */}
-                  <TableCell className="font-mono text-[11px] text-center text-muted-foreground">
-                    {relativeTimeStr}
-                  </TableCell>
-
-                  {/* View Episodes action button */}
-                  <TableCell className="text-center">
-                    <Link
-                      href={`/replay?teamId=${e.teamId}&teamName=${encodeURIComponent(e.teamName)}`}
-                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-muted hover:bg-primary/10 border border-border hover:border-primary/40 text-xs font-medium text-foreground hover:text-primary transition-all cursor-pointer"
-                      title={`Watch episodes for ${e.teamName}`}
-                    >
-                      <Play className="w-3 h-3 fill-current text-primary" />
-                      <span>Episodes</span>
-                    </Link>
-                  </TableCell>
+            {loading ? (
+              Array.from({ length: 5 }).map((_, idx) => (
+                <TableRow key={idx} className="border-b border-border">
+                  <TableCell className="text-center"><Skeleton className="h-4 w-5 mx-auto" /></TableCell>
+                  <TableCell><Skeleton className="h-4 w-32" /></TableCell>
+                  <TableCell><Skeleton className="h-5 w-12 mx-auto rounded-full" /></TableCell>
+                  <TableCell><Skeleton className="h-4 w-16 ml-auto" /></TableCell>
+                  <TableCell><Skeleton className="h-4 w-16 mx-auto" /></TableCell>
+                  <TableCell><Skeleton className="h-4 w-12 mx-auto" /></TableCell>
+                  <TableCell><Skeleton className="h-7 w-20 mx-auto rounded-md" /></TableCell>
                 </TableRow>
-              );
-            })}
+              ))
+            ) : (
+              filteredEntries.map((e, i) => {
+                const isTop3 = i < 3;
+                const relativeTimeStr = formatRelativeTime(e.lastActivityAt);
 
-            {filteredEntries.length === 0 && (
+                return (
+                  <TableRow
+                    key={e.teamId}
+                    className={`table-row-anim opacity-0 border-b border-border hover:bg-muted/50 transition-colors relative ${
+                      isTop3 ? "border-l-4 border-l-amber-600" : ""
+                    }`}
+                  >
+                    {/* Rank */}
+                    <TableCell className="font-mono text-xs text-center text-muted-foreground font-bold">{i + 1}</TableCell>
+
+                    {/* Team */}
+                    <TableCell className="font-sans text-xs font-semibold text-foreground">{e.teamName}</TableCell>
+
+                    {/* Members */}
+                    <TableCell className="text-center">
+                      <div className="flex items-center justify-center -space-x-1.5">
+                        {(e.members || []).map((m, idx) => (
+                          <img
+                            key={idx}
+                            src={m.image || `https://api.dicebear.com/7.x/identicon/svg?seed=${encodeURIComponent(m.name)}`}
+                            alt={m.name}
+                            className="w-6 h-6 rounded-full border border-background object-cover"
+                            title={m.name}
+                          />
+                        ))}
+                      </div>
+                    </TableCell>
+
+                    {/* Rating */}
+                    <TableCell className="font-mono text-xs font-bold text-right text-foreground">
+                      {e.rating.toFixed(1)}
+                    </TableCell>
+
+                    {/* Record (W-L-D) */}
+                    <TableCell className="font-mono text-xs text-center text-muted-foreground">
+                      {e.wins}-{e.losses}-{e.draws}
+                    </TableCell>
+
+                    {/* Last activity */}
+                    <TableCell className="font-mono text-[11px] text-center text-muted-foreground">
+                      {relativeTimeStr}
+                    </TableCell>
+
+                    {/* View Episodes action button */}
+                    <TableCell className="text-center">
+                      <Link
+                        href={`/replay?teamId=${e.teamId}&teamName=${encodeURIComponent(e.teamName)}`}
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-muted hover:bg-primary/10 border border-border hover:border-primary/40 text-xs font-medium text-foreground hover:text-primary transition-all cursor-pointer active:scale-95"
+                        title={`Watch episodes for ${e.teamName}`}
+                      >
+                        <Play className="w-3 h-3 fill-current text-primary" />
+                        <span>Episodes</span>
+                      </Link>
+                    </TableCell>
+                  </TableRow>
+                );
+              })
+            )}
+
+            {!loading && filteredEntries.length === 0 && (
               <TableRow>
                 <TableCell
                   colSpan={7}
                   className="text-center py-12 text-xs font-mono text-muted-foreground uppercase"
                 >
-                  {loading ? "FETCHING RANKINGS..." : "NO RANKED TEAMS RECORDED YET"}
+                  NO RANKED TEAMS RECORDED YET
                 </TableCell>
               </TableRow>
             )}

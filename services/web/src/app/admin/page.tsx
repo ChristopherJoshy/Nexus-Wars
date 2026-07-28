@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useSession } from "@/lib/auth-client";
 import { useRouter } from "next/navigation";
+import { Button } from "@/components/ui/button";
 
 export default function AdminPage() {
   const { data: session, isPending } = useSession();
@@ -62,7 +63,12 @@ export default function AdminPage() {
   if (isPending || !loaded) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
-        <p className="text-muted-foreground">Loading...</p>
+        <div className="flex flex-col items-center space-y-3 font-mono">
+          <div className="w-7 h-7 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+          <span className="text-xs text-muted-foreground uppercase tracking-widest animate-pulse">
+            Loading Admin Configuration...
+          </span>
+        </div>
       </div>
     );
   }
@@ -98,17 +104,18 @@ export default function AdminPage() {
               {paused ? "PAUSED" : "ACTIVE"}
             </div>
 
-            <button
+            <Button
               onClick={togglePause}
+              loading={toggling}
               disabled={toggling}
               className={`px-5 py-2 rounded-lg text-sm font-medium transition-colors ${
                 paused
-                  ? "bg-green-600 hover:bg-green-700 text-white"
-                  : "bg-red-600 hover:bg-red-700 text-white"
-              } disabled:opacity-50`}
+                  ? "bg-emerald-600 hover:bg-emerald-700 text-white"
+                  : "bg-destructive hover:bg-destructive/90 text-white"
+              }`}
             >
-              {toggling ? "..." : paused ? "Resume Submissions" : "Pause Submissions"}
-            </button>
+              {paused ? "Resume Submissions" : "Pause Submissions"}
+            </Button>
           </div>
 
           <p className="text-xs text-muted-foreground">
