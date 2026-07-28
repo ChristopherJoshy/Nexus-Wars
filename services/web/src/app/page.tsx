@@ -253,22 +253,22 @@ export default function OverviewPage() {
                 <tr>
                   <td className="p-2 font-mono text-primary border-r border-border">1 Ship</td>
                   <td className="p-2 border-r border-border">1.00 unit/turn</td>
-                  <td className="p-2 text-muted-foreground">50 turns</td>
+                  <td className="p-2 text-muted-foreground">50.0 turns</td>
                 </tr>
                 <tr>
                   <td className="p-2 font-mono text-primary border-r border-border">10 Ships</td>
-                  <td className="p-2 border-r border-border">1.36 units/turn</td>
-                  <td className="p-2 text-muted-foreground">~37 turns</td>
+                  <td className="p-2 border-r border-border">1.96 units/turn</td>
+                  <td className="p-2 text-muted-foreground">~25.5 turns</td>
                 </tr>
                 <tr>
                   <td className="p-2 font-mono text-primary border-r border-border">100 Ships</td>
-                  <td className="p-2 border-r border-border">3.23 units/turn</td>
-                  <td className="p-2 text-muted-foreground">~15.5 turns</td>
+                  <td className="p-2 border-r border-border">3.72 units/turn</td>
+                  <td className="p-2 text-muted-foreground">~13.4 turns</td>
                 </tr>
                 <tr>
                   <td className="p-2 font-mono text-primary border-r border-border">500 Ships</td>
-                  <td className="p-2 border-r border-border">5.15 units/turn</td>
-                  <td className="p-2 text-muted-foreground">~9.7 turns</td>
+                  <td className="p-2 border-r border-border">5.27 units/turn</td>
+                  <td className="p-2 text-muted-foreground">~9.5 turns</td>
                 </tr>
                 <tr>
                   <td className="p-2 font-mono text-primary border-r border-border">&ge; 1000 Ships</td>
