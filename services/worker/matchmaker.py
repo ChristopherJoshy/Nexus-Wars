@@ -1,16 +1,14 @@
 """
 Ladder matchmaker (Orbit Wars style).
 
-Each team may have up to 2 active submissions. The matchmaker pairs submissions
+Each team may have active submissions. The matchmaker pairs submissions
 by Glicko-2 rating proximity and enqueues rated matches.
 
 Key properties:
   - Advisory lock prevents concurrent matchmaker runs across worker instances.
-  - Newer submissions / teams (fewer matches played) are matched first for rapid feedback.
-  - Short team cooldown (10s) prevents thread contention while enabling frequent play.
-  - Dynamic pair cooldown (30s for small pools <=3 teams, 2m for larger pools).
+  - 3-minute post-match cooldown per agent (submission_id).
+  - 3-minute pair cooldown between rematches.
   - Immediate rematch bypass whenever a new agent submission is added.
-  - Primary pairing across distinct teams; fallback self-pairing across distinct active submissions.
 """
 import json
 import os
@@ -24,8 +22,9 @@ from jobs import engine_config
 
 MATCHMAKER_LOCK = 87349201
 MAX_RATING_GAP = 500
-TEAM_COOLDOWN_SECONDS = 10
-MAX_MATCHES_PER_CYCLE = 8
+AGENT_COOLDOWN_MINUTES = 3
+PAIR_COOLDOWN_MINUTES = 3
+MAX_MATCHES_PER_CYCLE = 4
 
 
 def _acquire_lock(conn):
@@ -37,13 +36,13 @@ def _release_lock(conn):
     execute(conn, "SELECT pg_advisory_unlock(%s)", (MATCHMAKER_LOCK,))
 
 
-def _recently_matched(conn, ta, tb, pair_cooldown_min=1.0):
+def _recently_matched(conn, ta, tb, pair_cooldown_min=PAIR_COOLDOWN_MINUTES):
     if ta == tb:
-        # For self-pairing of distinct submissions, allow rematch every 30s
+        # For self-pairing of distinct submissions, allow rematch every 3 minutes
         rows = execute_returning(conn,
             "SELECT 1 FROM matches "
             "WHERE team_a_id=%s AND team_b_id=%s AND status='finished' "
-            "AND finished_at > now() - interval '30 seconds' LIMIT 1",
+            "AND finished_at > now() - interval '3 minutes' LIMIT 1",
             (ta, tb))
         return bool(rows)
 
@@ -66,7 +65,7 @@ def _recently_matched(conn, ta, tb, pair_cooldown_min=1.0):
         if last_match and last_match[0] and newest[0] > last_match[0]:
             return False  # newer submission than last match -> allow rematch
 
-    # Fall back to dynamic pair cooldown window based on finished_at
+    # Fall back to 3-minute pair cooldown window based on finished_at
     rows = execute_returning(conn,
         "SELECT 1 FROM matches "
         "WHERE ((team_a_id=%s AND team_b_id=%s) OR (team_a_id=%s AND team_b_id=%s)) "
@@ -86,15 +85,15 @@ def _has_pending_match(conn, submission_id):
     return bool(rows)
 
 
-def _in_cooldown(conn, team_id):
-    """True if the team finished a match within TEAM_COOLDOWN_SECONDS (10s)."""
+def _in_cooldown(conn, submission_id):
+    """True if this specific agent/submission finished a match within AGENT_COOLDOWN_MINUTES (3m)."""
     rows = execute_returning(conn,
         "SELECT 1 FROM matches "
-        "WHERE (team_a_id=%s OR team_b_id=%s) "
+        "WHERE (submission_a_id=%s OR submission_b_id=%s) "
         "AND status = 'finished' "
-        "AND finished_at > now() - (%s::text || ' seconds')::interval "
+        "AND finished_at > now() - (%s::text || ' minutes')::interval "
         "LIMIT 1",
-        (team_id, team_id, str(TEAM_COOLDOWN_SECONDS)))
+        (submission_id, submission_id, str(AGENT_COOLDOWN_MINUTES)))
     return bool(rows)
 
 
@@ -150,15 +149,14 @@ def _enqueue_locked(conn, limit):
         return 0
 
     unique_teams = {r[0] for r in rows}
-    pair_cooldown_min = 0.5 if len(unique_teams) <= 3 else 2.0
 
-    # 1. Filter: remove submissions with pending/running matches or team in cooldown.
+    # 1. Filter: remove submissions with pending/running matches or agent in 3-minute cooldown.
     eligible = []
     for r in rows:
         tid, sid, rating, played = r[0], r[1], float(r[2]), int(r[3])
         if _has_pending_match(conn, sid):
             continue
-        if _in_cooldown(conn, tid):
+        if _in_cooldown(conn, sid):
             continue
         eligible.append((tid, sid, rating, played))
 
@@ -184,7 +182,7 @@ def _enqueue_locked(conn, limit):
                 continue
             if tid_a == tid_b:
                 continue  # distinct teams only in pass 1
-            if _recently_matched(conn, tid_a, tid_b, pair_cooldown_min):
+            if _recently_matched(conn, tid_a, tid_b, PAIR_COOLDOWN_MINUTES):
                 continue
             gap = abs(rating_a - rating_b)
             if gap > MAX_RATING_GAP:
@@ -211,7 +209,7 @@ def _enqueue_locked(conn, limit):
                 tid_b, sid_b, rating_b, played_b = eligible[j]
                 if sid_b in used_subs or sid_a == sid_b:
                     continue
-                if _recently_matched(conn, tid_a, tid_b, pair_cooldown_min):
+                if _recently_matched(conn, tid_a, tid_b, PAIR_COOLDOWN_MINUTES):
                     continue
                 create_match(conn, (tid_a, sid_a), (tid_b, sid_b))
                 used_subs.update({sid_a, sid_b})
