@@ -13,7 +13,10 @@ const ASCII_ART = `
 export function AsciiLoader() {
   const [visible, setVisible] = useState(() => {
     if (typeof window !== "undefined") {
-      return !sessionStorage.getItem("nexus_booted");
+      const navEntries = performance.getEntriesByType("navigation") as PerformanceNavigationTiming[];
+      const isReload = navEntries.length > 0 && navEntries[0].type === "reload";
+      const isFirstVisit = !sessionStorage.getItem("nexus_visited");
+      return isReload || isFirstVisit;
     }
     return false;
   });
@@ -24,7 +27,7 @@ export function AsciiLoader() {
     if (!visible) return;
 
     if (typeof window !== "undefined") {
-      sessionStorage.setItem("nexus_booted", "1");
+      sessionStorage.setItem("nexus_visited", "1");
     }
 
     const bootSequence = [
