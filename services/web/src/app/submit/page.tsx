@@ -2,9 +2,17 @@
 
 import { useEffect, useState, useRef } from "react";
 import Link from "next/link";
-import { Upload, Zap, Clock, Tv, Loader2, Trophy } from "lucide-react";
+import { Upload, Zap, Clock, Play, Loader2 } from "lucide-react";
 import { useSession, signIn } from "@/lib/auth-client";
 import { Button } from "@/components/ui/button";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { animate } from "animejs";
 
 function useResetCountdown() {
@@ -88,7 +96,7 @@ export default function SubmissionsPage() {
   const [error, setError] = useState<string | null>(null);
   const [hasTeam, setHasTeam] = useState<boolean | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
-  const listRef = useRef<HTMLDivElement>(null);
+  const tableRef = useRef<HTMLTableSectionElement>(null);
 
   useEffect(() => {
     if (!session) return;
@@ -127,13 +135,13 @@ export default function SubmissionsPage() {
   }, [session]);
 
   useEffect(() => {
-    if (submissions.length > 0 && listRef.current) {
-      animate(listRef.current.querySelectorAll(".sub-row-anim"), {
+    if (submissions.length > 0 && tableRef.current) {
+      animate(tableRef.current.querySelectorAll(".sub-row-anim"), {
         opacity: [0, 1],
-        translateY: [6, 0],
+        translateX: [-8, 0],
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        delay: (_el: any, i = 0) => i * 30,
-        duration: 450,
+        delay: (_el: any, i = 0) => i * 35,
+        duration: 400,
         ease: "outQuint",
       });
     }
@@ -214,7 +222,7 @@ export default function SubmissionsPage() {
   };
 
   const filteredSubmissions = submissions.filter((s) => {
-    const isErr = s.status === "error" || s.status === "failed" || s.status === "rejected";
+    const isErr = s.status === "error" || s.status === "failed" || s.status === "rejected" || s.status === "errored";
     if (filter === "successful") return !isErr;
     if (filter === "errors") return isErr;
     return true;
@@ -225,7 +233,7 @@ export default function SubmissionsPage() {
       {/* Cap Info + Upload */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h2 className="text-xl font-bold text-foreground">Submissions</h2>
+          <h2 className="text-xl font-bold text-foreground tracking-tight">Submissions</h2>
           <p className="text-xs text-muted-foreground mt-0.5">
             Upload Python bots to compete on the live ladder.
           </p>
@@ -307,69 +315,117 @@ export default function SubmissionsPage() {
         </div>
       </div>
 
-      {/* Submissions List */}
+      {/* Submissions Table Container (styled like Leaderboard Card) */}
       <div className="nexus-card overflow-x-auto">
-        <div className="px-5 py-3 border-b border-border bg-muted flex items-center justify-between text-muted-foreground text-[11px] font-medium">
-          <span>Submission</span>
-          <div className="flex items-center gap-8">
-            <span>Status</span>
-            <span>Episodes</span>
-          </div>
-        </div>
+        <Table>
+          <TableHeader className="bg-muted border-b border-border">
+            <TableRow className="hover:bg-transparent border-b-border">
+              <TableHead className="w-12 text-muted-foreground font-medium text-[11px] text-center">#</TableHead>
+              <TableHead className="text-muted-foreground font-medium text-[11px]">Submission</TableHead>
+              <TableHead className="w-28 text-muted-foreground font-medium text-[11px] text-center">Status</TableHead>
+              <TableHead className="w-28 text-muted-foreground font-medium text-[11px] text-right">Rating</TableHead>
+              <TableHead className="w-24 text-muted-foreground font-medium text-[11px] text-center py-1.5">
+                <div>Record</div>
+                <div className="text-[9px] font-mono text-muted-foreground/75 font-normal tracking-wider uppercase">(W-L-D)</div>
+              </TableHead>
+              <TableHead className="w-24 text-muted-foreground font-medium text-[11px] text-center">Uploaded</TableHead>
+              <TableHead className="w-28 text-muted-foreground font-medium text-[11px] text-center">Episodes</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody ref={tableRef}>
+            {filteredSubmissions.map((s, i) => {
+              const filename = (s.artifactKey || s.artifact_key || "agent.py").split("/").pop() || "agent.py";
+              const createdRaw = s.createdAt || s.created_at;
+              const relativeTimeStr = formatRelativeTime(createdRaw);
+              const isActive = s.status === "active";
+              const isValidated = s.status === "validated";
+              const isQueued = s.status === "queued" || s.status === "compiling";
+              const isRejected = s.status === "rejected" || s.status === "errored" || s.status === "failed";
 
-        <div ref={listRef} className="divide-y divide-border">
-          {filteredSubmissions.map((s) => {
-            const filename = (s.artifactKey || s.artifact_key || "agent.py").split("/").pop() || "agent.py";
-            const createdRaw = s.createdAt || s.created_at;
-            const relativeTimeStr = formatRelativeTime(createdRaw);
+              return (
+                <TableRow
+                  key={s.id}
+                  className={`sub-row-anim opacity-0 border-b border-border hover:bg-muted/50 transition-colors relative ${
+                    isActive ? "border-l-4 border-l-emerald-600" : (i === 0 ? "border-l-4 border-l-amber-600" : "")
+                  }`}
+                >
+                  {/* Index / Rank */}
+                  <TableCell className="font-mono text-xs text-center text-muted-foreground font-bold">{i + 1}</TableCell>
 
-            return (
-              <div
-                key={s.id}
-                className="sub-row-anim opacity-0 px-5 py-3.5 flex items-center justify-between hover:bg-muted/50 transition-colors"
-              >
-                <div className="flex items-center gap-3">
-                  <div>
-                    <div className="text-xs font-semibold text-foreground font-mono">{filename}</div>
-                    <div className="text-[11px] text-muted-foreground font-mono">
-                      {s.status} &bull; {relativeTimeStr}
-                    </div>
-                  </div>
+                  {/* Submission filename */}
+                  <TableCell className="font-mono text-xs font-semibold text-foreground">
+                    {filename}
+                  </TableCell>
 
-                  <div className="flex flex-col items-center gap-1">
-                    {typeof s.rating === "number" && (
-                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-amber-500/15 border border-amber-500/30 text-xs font-mono text-amber-800 dark:text-amber-200 font-bold">
-                        <Trophy className="w-3.5 h-3.5 text-amber-700 shrink-0" />
-                        {s.rating.toFixed(1)}
+                  {/* Status with markers */}
+                  <TableCell className="text-center">
+                    {isActive ? (
+                      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-[10px] font-mono text-emerald-600 dark:text-emerald-400 font-semibold">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+                        <span>Active</span>
+                      </span>
+                    ) : isValidated ? (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-500/10 border border-blue-500/20 text-[10px] font-mono text-blue-600 dark:text-blue-400 font-semibold">
+                        Validated
+                      </span>
+                    ) : isQueued ? (
+                      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/20 text-[10px] font-mono text-amber-600 dark:text-amber-400 font-semibold">
+                        <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-ping shrink-0" />
+                        <span>Queued</span>
+                      </span>
+                    ) : isRejected ? (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-500/10 border border-red-500/20 text-[10px] font-mono text-red-600 dark:text-red-400 font-semibold">
+                        Rejected
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-muted border border-border text-[10px] font-mono text-muted-foreground font-semibold">
+                        {s.status}
                       </span>
                     )}
-                  </div>
+                  </TableCell>
 
-                  {(s.matchesPlayed ?? 0) > 0 && (
-                    <span className="font-mono text-[10px] text-muted-foreground">
-                      {s.wins}-{s.losses}-{s.draws}
-                    </span>
-                  )}
+                  {/* Rating (Plain text like Leaderboard) */}
+                  <TableCell className="font-mono text-xs font-bold text-right text-foreground">
+                    {typeof s.rating === "number" ? s.rating.toFixed(1) : "—"}
+                  </TableCell>
 
-                  <Link
-                    href={`/replay?submissionId=${s.id}&artifact=${encodeURIComponent(filename)}`}
-                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-muted hover:bg-primary/10 border border-border hover:border-primary/40 text-xs font-medium text-foreground hover:text-primary transition-all cursor-pointer"
-                    title={`Watch episodes for ${filename}`}
-                  >
-                    <Tv className="w-3.5 h-3.5 text-primary" />
-                    <span>Episodes</span>
-                  </Link>
-                </div>
-              </div>
-            );
-          })}
+                  {/* Record (W-L-D) */}
+                  <TableCell className="font-mono text-xs text-center text-muted-foreground">
+                    {(s.matchesPlayed ?? 0) > 0 ? `${s.wins ?? 0}-${s.losses ?? 0}-${s.draws ?? 0}` : "—"}
+                  </TableCell>
 
-          {filteredSubmissions.length === 0 && (
-            <div className="text-center py-12 text-xs font-mono text-muted-foreground">
-              NO SUBMISSIONS YET
-            </div>
-          )}
-        </div>
+                  {/* Uploaded Relative Time */}
+                  <TableCell className="font-mono text-[11px] text-center text-muted-foreground">
+                    {relativeTimeStr}
+                  </TableCell>
+
+                  {/* Episodes Action Button */}
+                  <TableCell className="text-center">
+                    <Link
+                      href={`/replay?submissionId=${s.id}&artifact=${encodeURIComponent(filename)}`}
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-muted hover:bg-primary/10 border border-border hover:border-primary/40 text-xs font-medium text-foreground hover:text-primary transition-all cursor-pointer active:scale-95"
+                      title={`Watch episodes for ${filename}`}
+                    >
+                      <Play className="w-3 h-3 fill-current text-primary" />
+                      <span>Episodes</span>
+                    </Link>
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+
+            {filteredSubmissions.length === 0 && (
+              <TableRow>
+                <TableCell
+                  colSpan={7}
+                  className="text-center py-12 text-xs font-mono text-muted-foreground uppercase"
+                >
+                  NO SUBMISSIONS RECORDED YET
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
       </div>
     </div>
   );
