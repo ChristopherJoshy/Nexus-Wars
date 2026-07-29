@@ -32,9 +32,9 @@ interface LeaderboardEntry {
 }
 
 function formatRelativeTime(dateInput: Date | string | number | null | undefined): string {
-  if (!dateInput) return "Just now";
+  if (!dateInput) return "Never";
   const date = typeof dateInput === "string" || typeof dateInput === "number" ? new Date(dateInput) : dateInput;
-  if (isNaN(date.getTime())) return "Just now";
+  if (isNaN(date.getTime())) return "Never";
   const now = new Date();
   const diffMs = Math.max(0, now.getTime() - date.getTime());
   const diffSecs = Math.floor(diffMs / 1000);
