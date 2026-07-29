@@ -189,8 +189,13 @@ def run_rated(conn, match_id):
 
 
 def update_ratings(conn, team_a, team_b, winner, match_id, sub_a, sub_b):
+    already_rated = execute_returning(conn,
+        "SELECT 1 FROM match_participants WHERE match_id=%s LIMIT 1", (match_id,))
+    if already_rated:
+        return
+
     now = datetime.now(timezone.utc)
-    is_draw = winner == "draw"
+    is_draw = (winner != 0 and winner != 1)
 
     # Update team ratings for backwards-compatible leaderboard
     def load_team(tid):

@@ -1,4 +1,4 @@
--- Nexus Wars — migration 0003: per-submission ratings
+-- Nexus Wars — migration 0004: per-submission ratings
 
 CREATE TABLE IF NOT EXISTS submission_ratings (
     submission_id    UUID PRIMARY KEY REFERENCES submissions(id) ON DELETE CASCADE,

@@ -111,6 +111,17 @@ def process(job):
         conn.rollback()
         execute(conn, "UPDATE jobs SET status='failed', error=%s, finished_at=now() WHERE id=%s",
                 (str(e)[:2000], job_id))
+        if job[1] == "validate":
+            try:
+                import json
+                payload = job[2] if isinstance(job[2], dict) else json.loads(job[2])
+                sub_id = payload.get("submission_id")
+                if sub_id:
+                    execute(conn,
+                            "UPDATE submissions SET status='rejected', reject_reason='worker_error' "
+                            "WHERE id=%s AND status='queued'", (sub_id,))
+            except Exception as sub_err:
+                print(f"[fail] failed to reject submission {job_id}: {sub_err}")
         conn.commit()
         print(f"[fail] job {job_id}: {e}")
     finally:
@@ -129,12 +140,15 @@ def main():
         while True:
             ticks += 1
             if ticks % matchmake_every == 0:
+                c = None
                 try:
                     c = get_conn()
                     matchmaker.enqueue_matches(c)
-                    c.close()
                 except Exception as e:  # noqa: BLE001
                     print(f"[matchmaker] error: {e}")
+                finally:
+                    if c:
+                        c.close()
             if not sem.acquire(blocking=False):
                 time.sleep(POLL_INTERVAL)
                 continue

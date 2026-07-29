@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { matches, teams, matchParticipants } from "@/lib/db/schema";
-import { eq, or, desc, inArray } from "drizzle-orm";
+import { eq, or, and, desc, inArray } from "drizzle-orm";
 
 function formatRelativeTime(dateInput: Date | string | null | undefined): string {
   if (!dateInput) return "Just now";
@@ -35,6 +35,10 @@ export async function GET(req: NextRequest) {
         ? or(eq(matches.submissionAId, submissionId), eq(matches.submissionBId, submissionId))
         : undefined;
 
+    const whereClause = teamOrSubmissionWhere
+      ? and(baseWhere, teamOrSubmissionWhere)
+      : baseWhere;
+
     const recentMatches = await db
       .select({
         id: matches.id,
@@ -54,7 +58,7 @@ export async function GET(req: NextRequest) {
         submissionBId: matches.submissionBId,
       })
       .from(matches)
-      .where(teamOrSubmissionWhere ?? baseWhere)
+      .where(whereClause)
       .orderBy(desc(matches.createdAt))
       .limit(30);
 
@@ -75,7 +79,7 @@ export async function GET(req: NextRequest) {
         ? Math.round(p.ratingAfter - p.ratingBefore)
         : null;
       ratingMap.set(key, {
-        rating: p.ratingAfter ?? p.ratingBefore ?? 1500,
+        rating: p.ratingAfter ?? p.ratingBefore ?? 600,
         rd: p.rdAfter ?? p.rdBefore ?? 350,
         change,
       });
@@ -116,8 +120,8 @@ export async function GET(req: NextRequest) {
         kind: m.kind,
         teamA: teamAName,
         teamB: teamBName,
-        teamARating: aRating?.rating ?? 1500,
-        teamBRating: bRating?.rating ?? 1500,
+        teamARating: aRating?.rating ?? 600,
+        teamBRating: bRating?.rating ?? 600,
         teamAChange: aChange,
         teamBChange: bChange,
         winner: m.winner,

@@ -9,9 +9,10 @@ a pending/running match it is skipped.
 Key properties (inspired by Orbit Wars / Kaggle sim-comps):
   - Advisory lock prevents concurrent matchmaker runs across worker instances.
   - Newer teams (fewer matches played) are matched first so they get rapid feedback.
-  - Cooldown window prevents the same two teams from being rematched too soon.
+  - Fixed cooldown window prevents the same two teams from being rematched too soon.
   - Rating gap ceiling keeps matches competitive.
-  - One submission per team per match cycle (the newest active one).
+  - Exactly one submission per team per match cycle (the newest active one).
+  - Each team participates in at most one match per cycle (used_teams guard).
 """
 import json
 import os
@@ -26,6 +27,7 @@ from jobs import engine_config
 MATCHMAKER_LOCK = 87349201
 MAX_RATING_GAP = 400
 TEAM_COOLDOWN_MINUTES = 1
+PAIR_COOLDOWN_MINUTES = 8
 MAX_MATCHES_PER_CYCLE = 8
 
 
@@ -43,31 +45,28 @@ def _recently_matched(conn, ta, tb):
     # last match, allow rematch (the bot changed, so the matchup is new).
     for team_id, other_id in [(ta, tb), (tb, ta)]:
         newest = execute_returning(conn,
-            "SELECT s.created_at FROM submissions s "
-            "JOIN matches m ON "
-            "  ((m.team_a_id=%s AND m.team_b_id=%s) OR "
-            "   (m.team_a_id=%s AND m.team_b_id=%s)) "
-            "  AND m.status='finished' "
-            "WHERE s.team_id=%s AND s.status='active' "
-            "ORDER BY s.created_at DESC LIMIT 1",
-            (team_id, other_id, other_id, team_id, team_id))
-        if not newest:
-            continue  # no active submission = skip
+            "SELECT created_at FROM submissions "
+            "WHERE team_id=%s AND status='active' "
+            "ORDER BY created_at DESC LIMIT 1",
+            (team_id,))
+        if not newest or not newest[0]:
+            continue
         last_match = execute_returning(conn,
-            "SELECT MAX(m.finished_at) FROM matches m "
-            "WHERE ((m.team_a_id=%s AND m.team_b_id=%s) OR "
-            "       (m.team_a_id=%s AND m.team_b_id=%s)) "
-            "  AND m.status='finished'",
+            "SELECT MAX(finished_at) FROM matches "
+            "WHERE ((team_a_id=%s AND team_b_id=%s) OR "
+            "       (team_a_id=%s AND team_b_id=%s)) "
+            "  AND status='finished'",
             (ta, tb, tb, ta))
         if last_match and last_match[0] and newest[0] > last_match[0]:
             return False  # newer submission than last match -> allow rematch
-    # Fall back to random window (1-10 min) to avoid rapid repeat pairings
-    min_window = secrets.randbelow(10) + 1
+
+    # Fall back to fixed cooldown window based on finished_at to avoid rapid repeat pairings
     rows = execute_returning(conn,
         "SELECT 1 FROM matches "
         "WHERE ((team_a_id=%s AND team_b_id=%s) OR (team_a_id=%s AND team_b_id=%s)) "
-        "AND created_at > now() - (%s::text || ' minutes')::interval LIMIT 1",
-        (ta, tb, tb, ta, min_window))
+        "AND status='finished' "
+        "AND finished_at > now() - (%s::text || ' minutes')::interval LIMIT 1",
+        (ta, tb, tb, ta, PAIR_COOLDOWN_MINUTES))
     return bool(rows)
 
 
@@ -109,15 +108,30 @@ def create_match(conn, a, b):
     return match_id
 
 
+def _reap_stuck_jobs(conn):
+    """Clean up jobs and matches stuck in 'running' or 'pending' for > 12 minutes (e.g. worker crash)."""
+    execute(conn,
+        "UPDATE jobs SET status='failed', error='worker_timeout', finished_at=now() "
+        "WHERE status='running' AND started_at < now() - interval '12 minutes'")
+    execute(conn,
+        "UPDATE matches SET status='errored', reason='worker_timeout', finished_at=now() "
+        "WHERE status IN ('pending','running') AND created_at < now() - interval '12 minutes'")
+
+
 def enqueue_matches(conn, limit=MAX_MATCHES_PER_CYCLE):
     _acquire_lock(conn)
     try:
         return _enqueue_locked(conn, limit)
+    except Exception:
+        conn.rollback()
+        raise
     finally:
         _release_lock(conn)
 
 
 def _enqueue_locked(conn, limit):
+    _reap_stuck_jobs(conn)
+
     rows = query(conn,
         "SELECT s.team_id, s.id, COALESCE(sr.rating, 600.0), "
         "  COALESCE(sr.matches_played, 0) "
@@ -126,7 +140,17 @@ def _enqueue_locked(conn, limit):
         "WHERE s.status = 'active' "
         "ORDER BY s.team_id, s.created_at DESC", ())
 
-    entries = [(r[0], r[1], float(r[2]), int(r[3])) for r in rows]
+    # Deduplicate: keep only the newest active submission per team.
+    # The query is already ordered by team_id, created_at DESC so the first
+    # row for each team_id is the newest one.
+    seen_teams: set = set()
+    entries = []
+    for r in rows:
+        tid = r[0]
+        if tid in seen_teams:
+            continue
+        seen_teams.add(tid)
+        entries.append((tid, r[1], float(r[2]), int(r[3])))
 
     # 1. Filter: remove submissions with pending/running matches or team in cooldown.
     eligible = []
@@ -137,35 +161,36 @@ def _enqueue_locked(conn, limit):
             continue
         eligible.append((tid, sid, rating, played))
 
-    # 2. Sort: fewer matches played first (new teams get rapid feedback).
-    eligible.sort(key=lambda x: (x[3], -x[2]))
+    # 2. Sort: fewer matches played first (new teams get rapid feedback),
+    #    break ties by lower rating (so newcomers meet near-peer opponents).
+    eligible.sort(key=lambda x: (x[3], x[2]))
 
-    # 3. Greedy best-fit pairing; allow same-team different-submission rematches.
+    # 3. Dynamic limit scaling & Greedy best-fit pairing.
+    #    Each team participates in at most one match per cycle (enforced by used_teams).
+    effective_limit = min(limit, max(1, len(eligible) // 2))
     created = 0
-    used_subs = set()
-    used_teams = set()
+    used_subs: set = set()
+    used_teams: set = set()
     for i in range(len(eligible)):
-        if created >= limit:
+        if created >= effective_limit:
             break
         tid_a, sid_a, rating_a, played_a = eligible[i]
-        if sid_a in used_subs:
+        if tid_a in used_teams or sid_a in used_subs:
             continue
         best = None
         best_gap = None
         for j in range(i + 1, len(eligible)):
             tid_b, sid_b, rating_b, played_b = eligible[j]
-            if sid_b in used_subs:
+            if tid_b in used_teams or sid_b in used_subs:
                 continue
-            if tid_a == tid_b and sid_a != sid_b:
-                pass  # same team, different submission is allowed
-            elif tid_a == tid_b:
-                continue
+            if tid_a == tid_b:
+                continue  # same team — each team has exactly one entry now
             if _recently_matched(conn, tid_a, tid_b):
                 continue
-            gap = abs(eligible[i][2] - eligible[j][2])
+            gap = abs(rating_a - rating_b)
             if gap > MAX_RATING_GAP:
                 continue
-            if best is None or gap < best_gap or (gap == best_gap and secrets.randbelow(2) == 0):
+            if best is None or gap < best_gap:
                 best = j
                 best_gap = gap
         if best is not None:
