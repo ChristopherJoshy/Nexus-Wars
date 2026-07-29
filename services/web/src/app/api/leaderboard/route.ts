@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { submissionRatings, teams, teamMembers, users } from "@/lib/db/schema";
+import { submissionRatings, teams, teamMembers, users, submissions } from "@/lib/db/schema";
 import { eq, desc } from "drizzle-orm";
 
 export const dynamic = "force-dynamic";
@@ -35,6 +35,21 @@ export async function GET() {
       if (!bestByTeam.has(row.teamId)) bestByTeam.set(row.teamId, row);
     }
 
+    const latestSubmissions = await db
+      .select({
+        teamId: submissions.teamId,
+        createdAt: submissions.createdAt,
+      })
+      .from(submissions)
+      .orderBy(submissions.teamId, desc(submissions.createdAt));
+
+    const lastSubByTeam = new Map<string, Date>();
+    for (const sub of latestSubmissions) {
+      if (sub.teamId && sub.createdAt && !lastSubByTeam.has(sub.teamId)) {
+        lastSubByTeam.set(sub.teamId, sub.createdAt);
+      }
+    }
+
     const teamIds = allTeams.map((t) => t.teamId);
     let membersByTeam: Record<string, { name: string; image: string | null }[]> = {};
 
@@ -62,6 +77,11 @@ export async function GET() {
       .map((t) => {
         const top = bestByTeam.get(t.teamId);
         const teamId = t.teamId ?? "";
+        const lastSubAt = t.teamId ? lastSubByTeam.get(t.teamId) : null;
+        const lastActivityAt = lastSubAt
+          ? lastSubAt.toISOString()
+          : (top?.lastMatchAt ? top.lastMatchAt.toISOString() : undefined);
+
         return {
           teamId: t.teamId,
           teamName: t.teamName,
@@ -71,7 +91,7 @@ export async function GET() {
           losses: top?.losses ?? 0,
           draws: top?.draws ?? 0,
           matchesPlayed: top?.matchesPlayed ?? 0,
-          lastActivityAt: top?.lastMatchAt || undefined,
+          lastActivityAt,
           bestSubmissionId: top?.bestSubmissionId || undefined,
           members: teamId ? (membersByTeam[teamId] || [{ name: t.teamName, image: null }]) : [{ name: t.teamName, image: null }],
         };
