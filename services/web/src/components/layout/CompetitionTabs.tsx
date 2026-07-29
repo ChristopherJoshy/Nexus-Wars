@@ -26,7 +26,7 @@ export function CompetitionTabs() {
             <Link
               key={tab.href}
               href={tab.href}
-              className={`px-3.5 py-2 text-xs transition-all whitespace-nowrap border-b-2 ${
+              className={`px-3.5 py-2 text-xs transition-all duration-150 whitespace-nowrap border-b-2 active:scale-95 ${
                 isActive
                   ? "border-primary text-primary font-semibold"
                   : "border-transparent text-muted-foreground hover:text-foreground hover:border-border"

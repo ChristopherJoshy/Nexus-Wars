@@ -2,9 +2,10 @@
 
 import { useEffect, useState, useRef } from "react";
 import Link from "next/link";
-import { Upload, Zap, Clock, Play, Loader2 } from "lucide-react";
+import { Upload, Zap, Clock, Play, Loader2, RefreshCw } from "lucide-react";
 import { useSession, signIn } from "@/lib/auth-client";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
   TableBody,
@@ -91,6 +92,9 @@ export default function SubmissionsPage() {
   const [submissions, setSubmissions] = useState<Submission[]>([]);
   const [totalCount, setTotalCount] = useState(0);
   const [maxSubmissions, setMaxSubmissions] = useState(5);
+  const [loading, setLoading] = useState(true);
+  const [autoRefreshing, setAutoRefreshing] = useState(false);
+  const [reloadToken, setReloadToken] = useState(0);
   const [filter, setFilter] = useState<"all" | "successful" | "errors">("all");
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -98,18 +102,18 @@ export default function SubmissionsPage() {
   const fileRef = useRef<HTMLInputElement>(null);
   const tableRef = useRef<HTMLTableSectionElement>(null);
 
+  // Initial fetch and manual reload handler
   useEffect(() => {
     if (!session) return;
 
-    fetch("/api/teams", {
-      headers: { Authorization: `Bearer ${session.token}` },
-    })
+    let isCurrent = true;
+    const headers: Record<string, string> = { Authorization: `Bearer ${session.token}` };
+
+    fetch("/api/teams", { headers })
       .then((res) => {
         if (res.ok) {
           setHasTeam(true);
-          return fetch("/api/submissions", {
-            headers: { Authorization: `Bearer ${session.token}` },
-          });
+          return fetch("/api/submissions", { headers });
         } else if (res.status === 404) {
           setHasTeam(false);
           return null;
@@ -123,19 +127,71 @@ export default function SubmissionsPage() {
         return res.json();
       })
       .then((data: SubmissionsResponse) => {
-        if (data) {
+        if (isCurrent && data) {
           setSubmissions(data.submissions || []);
           setTotalCount(data.totalCount ?? 0);
           setMaxSubmissions(data.maxSubmissions ?? 5);
+          setLoading(false);
+          setAutoRefreshing(false);
         }
       })
       .catch(() => {
-        setSubmissions([]);
+        if (isCurrent) {
+          setSubmissions([]);
+          setLoading(false);
+          setAutoRefreshing(false);
+        }
       });
-  }, [session]);
+
+    return () => {
+      isCurrent = false;
+    };
+  }, [session, reloadToken]);
+
+  // Quiet 30-second background auto-refresh & visibility recovery
+  useEffect(() => {
+    if (!session || hasTeam === false) return;
+
+    const fetchQuietly = () => {
+      if (document.visibilityState !== "visible") return;
+      setAutoRefreshing(true);
+      const headers = { Authorization: `Bearer ${session.token}` };
+
+      fetch("/api/submissions", { headers })
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data: SubmissionsResponse | null) => {
+          if (data) {
+            setSubmissions(data.submissions || []);
+            setTotalCount(data.totalCount ?? 0);
+            setMaxSubmissions(data.maxSubmissions ?? 5);
+          }
+        })
+        .finally(() => setAutoRefreshing(false));
+    };
+
+    const interval = setInterval(fetchQuietly, 30000);
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        fetchQuietly();
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [session, hasTeam]);
+
+  const refreshSubmissions = () => {
+    setLoading(true);
+    setReloadToken((t) => t + 1);
+  };
 
   useEffect(() => {
-    if (submissions.length > 0 && tableRef.current) {
+    if (!loading && submissions.length > 0 && tableRef.current) {
       animate(tableRef.current.querySelectorAll(".sub-row-anim"), {
         opacity: [0, 1],
         translateX: [-8, 0],
@@ -145,7 +201,7 @@ export default function SubmissionsPage() {
         ease: "outQuint",
       });
     }
-  }, [submissions]);
+  }, [loading, submissions]);
 
   if (isPending) {
     return (
@@ -232,11 +288,17 @@ export default function SubmissionsPage() {
     <div className="space-y-6">
       {/* Cap Info + Upload */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <div>
-          <h2 className="text-xl font-bold text-foreground tracking-tight">Submissions</h2>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            Upload Python bots to compete on the live ladder.
-          </p>
+        <div className="flex items-center gap-3">
+          <div>
+            <h2 className="text-xl font-bold text-foreground tracking-tight">Submissions</h2>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Upload Python bots to compete on the live ladder.
+            </p>
+          </div>
+          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-[10px] font-mono text-emerald-600 dark:text-emerald-400 font-semibold">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+            <span>30s Auto-sync</span>
+          </span>
         </div>
 
         <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-4">
@@ -249,28 +311,41 @@ export default function SubmissionsPage() {
             </span>
           </div>
 
-          <input
-            ref={fileRef}
-            type="file"
-            accept=".py"
-            className="hidden"
-            id="bot-upload-file"
-            onChange={upload}
-            disabled={uploading}
-          />
-          <label
-            htmlFor="bot-upload-file"
-            className={`inline-flex items-center gap-2 px-4 py-2 rounded-md bg-primary hover:bg-primary/90 text-primary-foreground font-sans font-semibold text-xs shadow-xs transition-all cursor-pointer active:scale-95 ${
-              totalCount >= maxSubmissions || uploading ? "opacity-60 pointer-events-none" : ""
-            }`}
-          >
-            {uploading ? (
-              <Loader2 className="w-4 h-4 animate-spin shrink-0" />
-            ) : (
-              <Upload className="w-4 h-4 shrink-0" />
-            )}
-            <span>{uploading ? "Uploading Bot..." : "Upload Bot (.py)"}</span>
-          </label>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              loading={loading || autoRefreshing}
+              onClick={refreshSubmissions}
+              className="nexus-pill bg-muted border-border text-foreground hover:bg-accent text-xs"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${loading || autoRefreshing ? "animate-spin" : ""}`} />
+              Refresh
+            </Button>
+
+            <input
+              ref={fileRef}
+              type="file"
+              accept=".py"
+              className="hidden"
+              id="bot-upload-file"
+              onChange={upload}
+              disabled={uploading}
+            />
+            <label
+              htmlFor="bot-upload-file"
+              className={`inline-flex items-center gap-2 px-4 py-2 rounded-md bg-primary hover:bg-primary/90 text-primary-foreground font-sans font-semibold text-xs shadow-xs transition-all cursor-pointer active:scale-95 ${
+                totalCount >= maxSubmissions || uploading ? "opacity-60 pointer-events-none" : ""
+              }`}
+            >
+              {uploading ? (
+                <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+              ) : (
+                <Upload className="w-4 h-4 shrink-0" />
+              )}
+              <span>{uploading ? "Uploading Bot..." : "Upload Bot (.py)"}</span>
+            </label>
+          </div>
         </div>
       </div>
 
@@ -333,88 +408,102 @@ export default function SubmissionsPage() {
             </TableRow>
           </TableHeader>
           <TableBody ref={tableRef}>
-            {filteredSubmissions.map((s, i) => {
-              const filename = (s.artifactKey || s.artifact_key || "agent.py").split("/").pop() || "agent.py";
-              const createdRaw = s.createdAt || s.created_at;
-              const relativeTimeStr = formatRelativeTime(createdRaw);
-              const isActive = s.status === "active";
-              const isValidated = s.status === "validated";
-              const isQueued = s.status === "queued" || s.status === "compiling";
-              const isRejected = s.status === "rejected" || s.status === "errored" || s.status === "failed";
-
-              return (
-                <TableRow
-                  key={s.id}
-                  className={`sub-row-anim opacity-0 border-b border-border hover:bg-muted/50 transition-colors relative ${
-                    isActive ? "border-l-4 border-l-emerald-600" : (i === 0 ? "border-l-4 border-l-amber-600" : "")
-                  }`}
-                >
-                  {/* Index / Rank */}
-                  <TableCell className="font-mono text-xs text-center text-muted-foreground font-bold">{i + 1}</TableCell>
-
-                  {/* Submission filename */}
-                  <TableCell className="font-mono text-xs font-semibold text-foreground">
-                    {filename}
-                  </TableCell>
-
-                  {/* Status with markers */}
-                  <TableCell className="text-center">
-                    {isActive ? (
-                      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-[10px] font-mono text-emerald-600 dark:text-emerald-400 font-semibold">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
-                        <span>Active</span>
-                      </span>
-                    ) : isValidated ? (
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-500/10 border border-blue-500/20 text-[10px] font-mono text-blue-600 dark:text-blue-400 font-semibold">
-                        Validated
-                      </span>
-                    ) : isQueued ? (
-                      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/20 text-[10px] font-mono text-amber-600 dark:text-amber-400 font-semibold">
-                        <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-ping shrink-0" />
-                        <span>Queued</span>
-                      </span>
-                    ) : isRejected ? (
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-500/10 border border-red-500/20 text-[10px] font-mono text-red-600 dark:text-red-400 font-semibold">
-                        Rejected
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-muted border border-border text-[10px] font-mono text-muted-foreground font-semibold">
-                        {s.status}
-                      </span>
-                    )}
-                  </TableCell>
-
-                  {/* Rating (Plain text like Leaderboard) */}
-                  <TableCell className="font-mono text-xs font-bold text-right text-foreground">
-                    {typeof s.rating === "number" ? s.rating.toFixed(1) : "—"}
-                  </TableCell>
-
-                  {/* Record (W-L-D) */}
-                  <TableCell className="font-mono text-xs text-center text-muted-foreground">
-                    {(s.matchesPlayed ?? 0) > 0 ? `${s.wins ?? 0}-${s.losses ?? 0}-${s.draws ?? 0}` : "—"}
-                  </TableCell>
-
-                  {/* Uploaded Relative Time */}
-                  <TableCell className="font-mono text-[11px] text-center text-muted-foreground">
-                    {relativeTimeStr}
-                  </TableCell>
-
-                  {/* Episodes Action Button */}
-                  <TableCell className="text-center">
-                    <Link
-                      href={`/replay?submissionId=${s.id}&artifact=${encodeURIComponent(filename)}`}
-                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-muted hover:bg-primary/10 border border-border hover:border-primary/40 text-xs font-medium text-foreground hover:text-primary transition-all cursor-pointer active:scale-95"
-                      title={`Watch episodes for ${filename}`}
-                    >
-                      <Play className="w-3 h-3 fill-current text-primary" />
-                      <span>Episodes</span>
-                    </Link>
-                  </TableCell>
+            {loading ? (
+              Array.from({ length: 5 }).map((_, idx) => (
+                <TableRow key={idx} className="border-b border-border">
+                  <TableCell className="text-center"><Skeleton className="h-4 w-5 mx-auto" /></TableCell>
+                  <TableCell><Skeleton className="h-4 w-32" /></TableCell>
+                  <TableCell><Skeleton className="h-5 w-16 mx-auto rounded-full" /></TableCell>
+                  <TableCell><Skeleton className="h-4 w-12 ml-auto" /></TableCell>
+                  <TableCell><Skeleton className="h-4 w-14 mx-auto" /></TableCell>
+                  <TableCell><Skeleton className="h-4 w-12 mx-auto" /></TableCell>
+                  <TableCell><Skeleton className="h-7 w-20 mx-auto rounded-md" /></TableCell>
                 </TableRow>
-              );
-            })}
+              ))
+            ) : (
+              filteredSubmissions.map((s, i) => {
+                const filename = (s.artifactKey || s.artifact_key || "agent.py").split("/").pop() || "agent.py";
+                const createdRaw = s.createdAt || s.created_at;
+                const relativeTimeStr = formatRelativeTime(createdRaw);
+                const isActive = s.status === "active";
+                const isValidated = s.status === "validated";
+                const isQueued = s.status === "queued" || s.status === "compiling";
+                const isRejected = s.status === "rejected" || s.status === "errored" || s.status === "failed";
 
-            {filteredSubmissions.length === 0 && (
+                return (
+                  <TableRow
+                    key={s.id}
+                    className={`sub-row-anim opacity-0 border-b border-border hover:bg-muted/50 transition-colors relative ${
+                      isActive ? "border-l-4 border-l-emerald-600" : (i === 0 ? "border-l-4 border-l-amber-600" : "")
+                    }`}
+                  >
+                    {/* Index / Rank */}
+                    <TableCell className="font-mono text-xs text-center text-muted-foreground font-bold">{i + 1}</TableCell>
+
+                    {/* Submission filename */}
+                    <TableCell className="font-mono text-xs font-semibold text-foreground">
+                      {filename}
+                    </TableCell>
+
+                    {/* Status with markers */}
+                    <TableCell className="text-center">
+                      {isActive ? (
+                        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-[10px] font-mono text-emerald-600 dark:text-emerald-400 font-semibold">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+                          <span>Active</span>
+                        </span>
+                      ) : isValidated ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-500/10 border border-blue-500/20 text-[10px] font-mono text-blue-600 dark:text-blue-400 font-semibold">
+                          Validated
+                        </span>
+                      ) : isQueued ? (
+                        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/20 text-[10px] font-mono text-amber-600 dark:text-amber-400 font-semibold">
+                          <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-ping shrink-0" />
+                          <span>Queued</span>
+                        </span>
+                      ) : isRejected ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-500/10 border border-red-500/20 text-[10px] font-mono text-red-600 dark:text-red-400 font-semibold">
+                          Rejected
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-muted border border-border text-[10px] font-mono text-muted-foreground font-semibold">
+                          {s.status}
+                        </span>
+                      )}
+                    </TableCell>
+
+                    {/* Rating (Plain text like Leaderboard) */}
+                    <TableCell className="font-mono text-xs font-bold text-right text-foreground">
+                      {typeof s.rating === "number" ? s.rating.toFixed(1) : "—"}
+                    </TableCell>
+
+                    {/* Record (W-L-D) */}
+                    <TableCell className="font-mono text-xs text-center text-muted-foreground">
+                      {typeof s.wins === "number" ? `${s.wins}-${s.losses ?? 0}-${s.draws ?? 0}` : "0-0-0"}
+                    </TableCell>
+
+                    {/* Uploaded Relative Time */}
+                    <TableCell className="font-mono text-[11px] text-center text-muted-foreground">
+                      {relativeTimeStr}
+                    </TableCell>
+
+                    {/* Episodes Action Button */}
+                    <TableCell className="text-center">
+                      <Link
+                        href={`/replay?submissionId=${s.id}&artifact=${encodeURIComponent(filename)}`}
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-muted hover:bg-primary/10 border border-border hover:border-primary/40 text-xs font-medium text-foreground hover:text-primary transition-all cursor-pointer active:scale-95"
+                        title={`Watch episodes for ${filename}`}
+                      >
+                        <Play className="w-3 h-3 fill-current text-primary" />
+                        <span>Episodes</span>
+                      </Link>
+                    </TableCell>
+                  </TableRow>
+                );
+              })
+            )}
+
+            {!loading && filteredSubmissions.length === 0 && (
               <TableRow>
                 <TableCell
                   colSpan={7}
