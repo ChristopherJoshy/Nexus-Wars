@@ -18,6 +18,7 @@ import {
   Monitor,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { ReplayRenderer } from "@/components/replay/ReplayRenderer";
 import { useSession } from "@/lib/auth-client";
 import { animate } from "animejs";
@@ -78,9 +79,10 @@ function GameHistoryContent() {
   const artifactParam = searchParams.get("artifact");
 
   const [matchList, setMatchList] = useState<MatchItem[]>([]);
+  const [loadingMatches, setLoadingMatches] = useState(true);
   const [selectedMatch, setSelectedMatch] = useState<MatchItem | null>(null);
   const [replay, setReplay] = useState<ReplayData | null>(null);
-  
+
   const [step, setStep] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [speedMultiplier, setSpeedMultiplier] = useState<0.5 | 1 | 2 | 4>(1);
@@ -138,10 +140,16 @@ function GameHistoryContent() {
         setMatchList(data);
         if (data.length > 0) {
           setSelectedMatch(data[0]);
+        } else {
+          setSelectedMatch(null);
         }
       })
       .catch(() => {
         setMatchList([]);
+        setSelectedMatch(null);
+      })
+      .finally(() => {
+        setLoadingMatches(false);
       });
   }, [teamId, submissionId, teamNameParam]);
 
@@ -406,57 +414,76 @@ function GameHistoryContent() {
 
         {/* Match History List */}
         <div ref={sidebarRef} className="flex-1 overflow-y-auto p-2.5 space-y-2 font-mono">
-          {matchList.map((m) => {
-            const isSelected = selectedMatch?.id === m.id;
-            return (
-              <div
-                key={m.id}
-                onClick={() => selectMatch(m)}
-                className={`history-item-anim w-full text-left p-2.5 rounded-md border transition-all cursor-pointer flex items-center justify-between gap-2 ${
-                  isSelected
-                    ? "bg-secondary border-primary/60 shadow-xs"
-                    : "bg-background/60 border-border/80 hover:bg-muted/50 hover:border-border"
-                }`}
-              >
-                <div className="flex-1 min-w-0">
-                  {/* Team A (Blue) */}
-                  <div className="flex items-center justify-between text-xs mb-1">
-                    <div className="flex items-center gap-1.5 truncate max-w-[150px]">
-                      <span className="w-2 h-2 rounded-full bg-blue-600 shrink-0" />
-                      <span className={`truncate font-semibold text-[11px] ${m.winner === "a" ? "text-foreground" : "text-muted-foreground"}`}>
-                        {m.teamA}
-                      </span>
-                      {m.winner === "a" && (
-                        <Trophy className="w-3 h-3 text-amber-600 shrink-0" />
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Team B (Orange) */}
-                  <div className="flex items-center justify-between text-xs">
-                    <div className="flex items-center gap-1.5 truncate max-w-[150px]">
-                      <span className="w-2 h-2 rounded-full bg-orange-600 shrink-0" />
-                      <span className={`truncate font-semibold text-[11px] ${m.winner === "b" ? "text-foreground" : "text-muted-foreground"}`}>
-                        {m.teamB}
-                      </span>
-                      {m.winner === "b" && (
-                        <Trophy className="w-3 h-3 text-amber-600 shrink-0" />
-                      )}
-                    </div>
-                  </div>
+          {loadingMatches ? (
+            Array.from({ length: 4 }).map((_, idx) => (
+              <div key={idx} className="p-3 rounded-md border border-border space-y-2">
+                <div className="flex justify-between items-center">
+                  <Skeleton className="h-3.5 w-24" />
+                  <Skeleton className="h-3 w-8" />
                 </div>
-
-                <button
-                  type="button"
-                  onClick={(e) => downloadMatchJson(e, m.id)}
-                  className="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors shrink-0 cursor-pointer"
-                  title="Download match JSON data"
-                >
-                  <Download className="w-3.5 h-3.5" />
-                </button>
+                <div className="flex justify-between items-center">
+                  <Skeleton className="h-3.5 w-20" />
+                  <Skeleton className="h-3 w-8" />
+                </div>
               </div>
-            );
-          })}
+            ))
+          ) : matchList.length === 0 ? (
+            <div className="py-12 text-center text-[11px] font-mono text-muted-foreground uppercase tracking-wider">
+              No Matches Found
+            </div>
+          ) : (
+            matchList.map((m) => {
+              const isSelected = selectedMatch?.id === m.id;
+              return (
+                <div
+                  key={m.id}
+                  onClick={() => selectMatch(m)}
+                  className={`history-item-anim w-full text-left p-2.5 rounded-md border transition-all cursor-pointer flex items-center justify-between gap-2 ${
+                    isSelected
+                      ? "bg-secondary border-primary/60 shadow-xs"
+                      : "bg-background/60 border-border/80 hover:bg-muted/50 hover:border-border"
+                  }`}
+                >
+                  <div className="flex-1 min-w-0">
+                    {/* Team A (Blue) */}
+                    <div className="flex items-center justify-between text-xs mb-1">
+                      <div className="flex items-center gap-1.5 truncate max-w-[150px]">
+                        <span className="w-2 h-2 rounded-full bg-blue-600 shrink-0" />
+                        <span className={`truncate font-semibold text-[11px] ${m.winner === "a" ? "text-foreground" : "text-muted-foreground"}`}>
+                          {m.teamA}
+                        </span>
+                        {m.winner === "a" && (
+                          <Trophy className="w-3 h-3 text-amber-600 shrink-0" />
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Team B (Orange) */}
+                    <div className="flex items-center justify-between text-xs">
+                      <div className="flex items-center gap-1.5 truncate max-w-[150px]">
+                        <span className="w-2 h-2 rounded-full bg-orange-600 shrink-0" />
+                        <span className={`truncate font-semibold text-[11px] ${m.winner === "b" ? "text-foreground" : "text-muted-foreground"}`}>
+                          {m.teamB}
+                        </span>
+                        {m.winner === "b" && (
+                          <Trophy className="w-3 h-3 text-amber-600 shrink-0" />
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={(e) => downloadMatchJson(e, m.id)}
+                    className="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors shrink-0 cursor-pointer"
+                    title="Download match JSON data"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              );
+            })
+          )}
         </div>
       </aside>
 
@@ -612,12 +639,44 @@ function GameHistoryContent() {
                 showTrajectories={showTrajectories}
                 fleetSizeFilter={fleetSizeFilter}
               />
-            ) : (
+            ) : loadingMatches ? (
+              <div className="flex flex-col items-center justify-center space-y-3 font-mono">
+                <div className="w-8 h-8 border border-primary border-t-transparent rounded-full animate-spin" />
+                <span className="text-xs text-muted-foreground uppercase tracking-widest animate-pulse">
+                  LOADING MATCH HISTORY...
+                </span>
+              </div>
+            ) : selectedMatch ? (
               <div className="flex flex-col items-center justify-center space-y-3 font-mono">
                 <div className="w-8 h-8 border border-primary border-t-transparent rounded-full animate-spin" />
                 <span className="text-xs text-muted-foreground uppercase tracking-widest animate-pulse">
                   INITIALIZING SPACE TELEMETRY...
                 </span>
+              </div>
+            ) : (
+              <div className="flex flex-col items-center justify-center space-y-4 max-w-sm mx-auto text-center font-mono p-6 bg-card border border-border rounded-lg shadow-xs">
+                <div className="p-3 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-600">
+                  <Trophy className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-foreground uppercase tracking-wide">
+                    [ NO_EPISODES_AVAILABLE ]
+                  </h3>
+                  <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
+                    {artifactParam
+                      ? `No recorded match episodes found for ${artifactParam} yet.`
+                      : teamNameParam
+                        ? `No recorded match episodes found for ${teamNameParam} yet.`
+                        : "No recorded match episodes found on the ladder yet."}
+                  </p>
+                </div>
+                <Link
+                  href={returnLink}
+                  className="nexus-pill bg-primary hover:bg-primary/90 text-primary-foreground font-bold px-4 py-2 text-xs inline-flex items-center gap-1.5"
+                >
+                  <ArrowLeft className="w-3.5 h-3.5" />
+                  <span>Return to {returnLabel}</span>
+                </Link>
               </div>
             )}
           </div>

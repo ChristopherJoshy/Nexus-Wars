@@ -165,10 +165,6 @@ export default function LeaderboardPage() {
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div className="flex items-center gap-3">
           <h2 className="text-xl font-bold text-foreground tracking-tight">Leaderboard</h2>
-          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-[10px] font-mono text-emerald-600 dark:text-emerald-400 font-semibold">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
-            <span>30s Auto-sync</span>
-          </span>
         </div>
         <div className="flex items-center gap-2">
           <Button

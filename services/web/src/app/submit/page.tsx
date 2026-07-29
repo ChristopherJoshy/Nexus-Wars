@@ -295,10 +295,6 @@ export default function SubmissionsPage() {
               Upload Python bots to compete on the live ladder.
             </p>
           </div>
-          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-[10px] font-mono text-emerald-600 dark:text-emerald-400 font-semibold">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
-            <span>30s Auto-sync</span>
-          </span>
         </div>
 
         <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-4">
