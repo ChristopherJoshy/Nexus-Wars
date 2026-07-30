@@ -3,11 +3,11 @@
 import { useEffect, useState } from "react";
 
 const ASCII_ART = `
- _   _ _____  ___   _ ___   __        ___  ____  ____  
-| \\ | | ____|\\ \\ \\ / // ___|  \\ \\      / / \\|  _ \\/ ___| 
-|  \\| |  _|   \\ \\ V /| |  _    \\ \\ /\\ / / _ \\ |_) \\___ \\ 
-| |\\  | |___   /   \\ | |_| |    \\ V  V / ___ \\|  _ <___) |
-|_| \\_|_____| /_/\\_\\\\ \\____|     \\_/\\_/_/   \\_\\_| \\_\\____/ 
+  _   _ _______  ___   _ ____   __        ___    ____  ____  
+ | \\ | | ____\\ \\/ / | | / ___|  \\ \\      / / \\  |  _ \\/ ___| 
+ |  \\| |  _|  \\  /| | | \\___ \\   \\ \\ /\\ / / _ \\ | |_) \\___ \\ 
+ | |\\  | |___ /  \\| |_| |___) |   \\ V  V / ___ \\|  _ < ___) |
+ |_| \\_|_____/_/\\_\\\\___/|____/     \\_/\\_/_/   \\_\\_| \\_\\____/ 
 `;
 
 export function AsciiLoader() {
@@ -66,7 +66,7 @@ export function AsciiLoader() {
       }`}
     >
       <div className="max-w-xl w-full flex flex-col items-center space-y-4">
-        <pre className="text-[10px] sm:text-xs leading-none text-primary font-mono text-center overflow-hidden font-bold tracking-tighter sm:tracking-normal whitespace-pre">
+        <pre className="text-[10px] sm:text-xs leading-none text-primary font-mono text-center overflow-hidden font-bold tracking-tighter sm:tracking-normal">
           {ASCII_ART}
         </pre>
         <div className="w-full h-px bg-border my-2" />
