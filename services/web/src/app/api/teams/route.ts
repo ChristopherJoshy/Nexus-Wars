@@ -46,14 +46,36 @@ export async function POST(req: NextRequest) {
         return [];
       }
 
-      const [t] = await tx
-        .insert(teams)
-        .values({
-          name,
-          teamCode: generateTeamCode(),
-          ownerId: session.user.id,
-        })
-        .returning();
+      let t: typeof teams.$inferSelect | undefined;
+      for (let attempt = 0; attempt < 5; attempt++) {
+        try {
+          const [inserted] = await tx
+            .insert(teams)
+            .values({
+              name,
+              teamCode: generateTeamCode(),
+              ownerId: session.user.id,
+            })
+            .returning();
+          t = inserted;
+          break;
+        } catch (e: unknown) {
+          if (
+            typeof e === "object" &&
+            e !== null &&
+            "code" in e &&
+            (e as { code: string }).code === "23505" &&
+            attempt < 4
+          ) {
+            continue;
+          }
+          throw e;
+        }
+      }
+
+      if (!t) {
+        throw new Error("Failed to generate unique team code");
+      }
 
       await tx.insert(teamMembers).values({
         teamId: t.id,

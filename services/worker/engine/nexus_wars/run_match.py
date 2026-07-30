@@ -118,7 +118,7 @@ class SubprocessRunner:
             launch,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
             text=True,
             bufsize=1,
         )
@@ -133,24 +133,32 @@ class SubprocessRunner:
             self.dead = True
             return []
 
-        # Wait up to act_timeout for one line of stdout.
-        line = self._readline(obs_dict)
-        if line is None:
-            self._kill()
-            return []
-        if not line:
-            self._kill()
-            return []
-        try:
-            action = json.loads(line)
-            if isinstance(action, dict):
-                action = action.get("action", [])
-            return action if isinstance(action, list) else []
-        except json.JSONDecodeError:
-            self._kill()
-            return []
+        start_time = time.time()
+        while time.time() - start_time < self.act_timeout:
+            remaining = self.act_timeout - (time.time() - start_time)
+            if remaining <= 0:
+                break
+            line = self._readline(remaining)
+            if line is None or not line:
+                self._kill()
+                return []
+            line_str = line.strip()
+            if not line_str:
+                continue
+            try:
+                action = json.loads(line_str)
+                if isinstance(action, dict):
+                    action = action.get("action", [])
+                if isinstance(action, list):
+                    return action
+            except json.JSONDecodeError:
+                # Skip non-JSON debug/print logs from stdout
+                continue
 
-    def _readline(self, obs_dict):
+        self._kill()
+        return []
+
+    def _readline(self, timeout):
         result = [None]
         def reader():
             try:
@@ -160,7 +168,7 @@ class SubprocessRunner:
         thread = threading.Thread(target=reader)
         thread.daemon = True
         thread.start()
-        thread.join(timeout=self.act_timeout)
+        thread.join(timeout=timeout)
         if thread.is_alive():
             return None
         return result[0] if result[0] is not None else ""
