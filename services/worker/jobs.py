@@ -46,12 +46,12 @@ def engine_config():
     }
 
 
-def _sandbox_cmd():
+def _sandbox_cmd(workdir):
     if not USE_NSJAIL:
         return None
-    # The bot command ([sys.executable, entry]) is appended after this; do NOT
-    # repeat sys.executable here or the child becomes `python3 python3 entry`.
-    return ["nsjail", "-C", NSJAIL_CFG, "--"]
+    # We mount the workdir into the jail as read-only /work.
+    # The bot command ([sys.executable, entry]) is appended after this.
+    return ["nsjail", "-C", NSJAIL_CFG, "-R", f"{workdir}:/work", "--"]
 
 
 def extract_submission(conn, submission_id):
@@ -99,8 +99,13 @@ def bot_runner(workdir):
                 break
         else:
             raise RuntimeError("no main.py found in submission")
+
+    if USE_NSJAIL:
+        rel = os.path.relpath(entry, workdir)
+        entry = os.path.join("/work", rel).replace("\\", "/")
+
     command = [sys.executable, entry]
-    return {"command": command, "actTimeout": ACT_TIMEOUT, "sandbox": _sandbox_cmd()}
+    return {"command": command, "actTimeout": ACT_TIMEOUT, "sandbox": _sandbox_cmd(workdir)}
 
 
 # --------------------------------------------------------------------------

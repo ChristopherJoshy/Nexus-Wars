@@ -25,8 +25,9 @@ def put_json(key, obj):
     if MINIO_ENDPOINT:
         _s3().put_object(Bucket=MINIO_BUCKET, Key=key, Body=data)
     else:
-        os.makedirs(STORAGE_DIR, exist_ok=True)
-        with open(os.path.join(STORAGE_DIR, key), "wb") as f:
+        full_path = os.path.join(STORAGE_DIR, key)
+        os.makedirs(os.path.dirname(full_path), exist_ok=True)
+        with open(full_path, "wb") as f:
             f.write(data)
     return len(data)
 

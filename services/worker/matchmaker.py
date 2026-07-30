@@ -163,6 +163,9 @@ def _enqueue_locked(conn, limit):
     # Sort: fewer matches played first for rapid feedback, then lower rating.
     eligible.sort(key=lambda x: (x[3], x[2]))
 
+    # Dynamically scale the limit to avoid starving established teams if many teams are active.
+    limit = max(limit, min(len(eligible) // 2, 20))
+
     created = 0
     used_subs: set = set()
     used_teams: set = set()
