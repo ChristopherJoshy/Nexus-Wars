@@ -64,6 +64,7 @@ interface SubmissionsResponse {
   submissions: Submission[];
   totalCount: number;
   maxSubmissions: number;
+  submissionsPaused?: boolean;
 }
 
 function formatRelativeTime(dateInput: Date | string | number | null | undefined): string {
@@ -92,6 +93,7 @@ export default function SubmissionsPage() {
   const [submissions, setSubmissions] = useState<Submission[]>([]);
   const [totalCount, setTotalCount] = useState(0);
   const [maxSubmissions, setMaxSubmissions] = useState(5);
+  const [submissionsPaused, setSubmissionsPaused] = useState(false);
   const [loading, setLoading] = useState(true);
   const [autoRefreshing, setAutoRefreshing] = useState(false);
   const [reloadToken, setReloadToken] = useState(0);
@@ -131,6 +133,7 @@ export default function SubmissionsPage() {
           setSubmissions(data.submissions || []);
           setTotalCount(data.totalCount ?? 0);
           setMaxSubmissions(data.maxSubmissions ?? 5);
+          setSubmissionsPaused(Boolean(data.submissionsPaused));
           setLoading(false);
           setAutoRefreshing(false);
         }
@@ -331,7 +334,7 @@ export default function SubmissionsPage() {
             <label
               htmlFor="bot-upload-file"
               className={`inline-flex items-center gap-2 px-4 py-2 rounded-md bg-primary hover:bg-primary/90 text-primary-foreground font-sans font-semibold text-xs shadow-xs transition-all cursor-pointer active:scale-95 ${
-                totalCount >= maxSubmissions || uploading ? "opacity-60 pointer-events-none" : ""
+                totalCount >= maxSubmissions || uploading || submissionsPaused ? "opacity-60 pointer-events-none" : ""
               }`}
             >
               {uploading ? (
@@ -344,6 +347,13 @@ export default function SubmissionsPage() {
           </div>
         </div>
       </div>
+
+      {submissionsPaused && (
+        <div className="bg-amber-500/10 border border-amber-500/30 text-amber-600 dark:text-amber-400 rounded-lg p-3 text-xs flex items-center gap-2 font-mono">
+          <Zap className="w-4 h-4 shrink-0 text-amber-500" />
+          <span>[ PAUSED ] All new bot submissions are currently paused by the administrator.</span>
+        </div>
+      )}
 
       {error && (
         <div className="bg-red-500/10 border border-red-500/30 text-destructive rounded-lg p-3 text-xs flex justify-between items-start gap-4">

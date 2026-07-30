@@ -5,6 +5,7 @@ import { getSession } from "@/lib/get-session";
 import { eq, ne, sql, and, gte } from "drizzle-orm";
 import { getS3, S3_BUCKET, PutObjectCommand } from "@/lib/s3";
 import { randomUUID } from "crypto";
+import { parsePausedValue } from "@/app/api/admin/route";
 
 const MAX_SUBMISSIONS_PER_DAY = 5;
 
@@ -26,10 +27,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "No team" }, { status: 400 });
   }
 
-  const paused = await db.query.settings.findFirst({
+  const pausedRow = await db.query.settings.findFirst({
     where: eq(settings.key, "submissions_paused"),
   });
-  if (paused && (paused.value === "true" || paused.value === true)) {
+  if (pausedRow && parsePausedValue(pausedRow.value)) {
     return NextResponse.json(
       { error: "Submissions are currently paused by the admin." },
       { status: 503 }
@@ -123,6 +124,7 @@ export async function GET(req: NextRequest) {
       submissions: [],
       totalCount: 0,
       maxSubmissions: MAX_SUBMISSIONS_PER_DAY,
+      submissionsPaused: false,
     });
   }
 
@@ -162,6 +164,11 @@ export async function GET(req: NextRequest) {
       )
     );
 
+  const pausedRow = await db.query.settings.findFirst({
+    where: eq(settings.key, "submissions_paused"),
+  });
+  const submissionsPaused = parsePausedValue(pausedRow?.value);
+
   const enriched = subs.map((s) => {
     const r = ratingMap.get(s.id) || null;
     const filename = (s.artifactKey || "agent.py").split("/").pop() || "agent.py";
@@ -181,5 +188,6 @@ export async function GET(req: NextRequest) {
     submissions: enriched,
     totalCount: countResult?.count ?? 0,
     maxSubmissions: MAX_SUBMISSIONS_PER_DAY,
+    submissionsPaused,
   });
 }
