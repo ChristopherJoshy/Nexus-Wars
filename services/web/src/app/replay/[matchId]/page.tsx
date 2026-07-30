@@ -96,6 +96,7 @@ export default function MatchReplayPage({
 
   const selectMatch = (m: MatchItem) => {
     setSelectedMatch(m);
+    setReplay(null);
     setStep(0);
     setPlaying(false);
   };
@@ -124,6 +125,10 @@ export default function MatchReplayPage({
   // Fetch Replay Data when selectedMatch changes
   useEffect(() => {
     if (!selectedMatch) return;
+
+    setReplay(null);
+    setStep(0);
+    setPlaying(false);
 
     const headers: Record<string, string> = {};
     if (session?.token) headers["Authorization"] = `Bearer ${session.token}`;
@@ -307,21 +312,25 @@ export default function MatchReplayPage({
             {/* Teams & Winner Badges */}
             <div className="flex items-center gap-3">
               <div className={`px-2.5 py-1 rounded border text-[11px] font-bold ${
-                selectedMatch.winner === "b"
-                  ? "bg-destructive/15 text-destructive border-destructive/30"
-                  : "bg-sky-500/15 text-sky-500 border-sky-500/30"
+                selectedMatch.winner === "draw"
+                  ? "bg-muted text-muted-foreground border-border"
+                  : selectedMatch.winner === "a"
+                  ? "bg-sky-500/15 text-sky-500 border-sky-500/30"
+                  : "bg-destructive/15 text-destructive border-destructive/30"
               }`}>
-                [{selectedMatch.winner === "a" ? "Win" : "Loss"}] {selectedMatch.teamA} ({selectedMatch.scores[0] ?? 25})
+                [{selectedMatch.winner === "a" ? "Win" : selectedMatch.winner === "draw" ? "Draw" : "Loss"}] {selectedMatch.teamA} ({selectedMatch.scores[0] ?? 25})
               </div>
 
               <span className="text-muted-foreground font-bold">vs</span>
 
               <div className={`px-2.5 py-1 rounded border text-[11px] font-bold ${
-                selectedMatch.winner === "b"
+                selectedMatch.winner === "draw"
+                  ? "bg-muted text-muted-foreground border-border"
+                  : selectedMatch.winner === "b"
                   ? "bg-amber-500/15 text-amber-500 border-amber-500/30"
                   : "bg-destructive/15 text-destructive border-destructive/30"
               }`}>
-                [{selectedMatch.winner === "b" ? "Win" : "Loss"}] {selectedMatch.teamB} ({selectedMatch.scores[1] ?? 25})
+                [{selectedMatch.winner === "b" ? "Win" : selectedMatch.winner === "draw" ? "Draw" : "Loss"}] {selectedMatch.teamB} ({selectedMatch.scores[1] ?? 25})
               </div>
             </div>
 

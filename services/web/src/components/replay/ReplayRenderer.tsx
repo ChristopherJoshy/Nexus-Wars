@@ -4,7 +4,7 @@ import { useRef, useEffect } from "react";
 
 const BOARD_SIZE = 100;
 const CENTER = BOARD_SIZE / 2;
-const SUN_RADIUS = 8.5;
+const SUN_RADIUS = 10.0; // Must match engine constant
 
 // Player Color System: 0 = Vibrant Blue, 1 = Vibrant Orange, -1 = Neutral Slate
 const PLAYER_COLORS = {
@@ -254,17 +254,16 @@ export function ReplayRenderer({
       const px = toScreenX(p.x);
       const py = toScreenY(p.y);
 
-      const rawR = typeof p.radius === "number" && p.radius > 0 ? p.radius : 2.5;
-      const minR = Math.max(11, Math.round(drawWidth * 0.024));
-      const maxR = Math.min(34, Math.round(drawWidth * 0.048));
-      const pr = Math.min(maxR, Math.max(minR, rawR * scale * 0.65));
+      // Use true game-space radius scaled to canvas — matches engine exactly
+      const rawR = typeof p.radius === "number" && p.radius > 0 ? p.radius : 2.0;
+      const pr = Math.max(8, rawR * scale);
 
       const pColors = PLAYER_COLORS[p.owner as keyof typeof PLAYER_COLORS] || PLAYER_COLORS[-1];
 
       // Planet Glow Aura for active player planets
       if (p.owner !== -1) {
         ctx.beginPath();
-        ctx.arc(px, py, pr + 4, 0, Math.PI * 2);
+        ctx.arc(px, py, pr + 5, 0, Math.PI * 2);
         ctx.fillStyle = pColors.glow;
         ctx.fill();
       }
@@ -280,52 +279,74 @@ export function ReplayRenderer({
 
       // Planet Ship Count Label inside node
       ctx.fillStyle = "#ffffff";
-      ctx.font = `bold ${Math.max(10, Math.round(pr * 0.82))}px sans-serif`;
+      ctx.font = `bold ${Math.max(9, Math.round(pr * 0.75))}px sans-serif`;
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      ctx.fillText(String(p.ships), px, py);
+      ctx.fillText(String(Math.floor(p.ships)), px, py);
 
       // Planet Production Badge above node (+P)
       if (showProduction && p.production > 0) {
         const prodText = `+${p.production}`;
-        const fontSize = Math.max(9, Math.round(drawWidth * 0.017));
+        const fontSize = Math.max(8, Math.round(drawWidth * 0.016));
         ctx.font = `bold ${fontSize}px monospace`;
         ctx.fillStyle = "#15803d";
         ctx.textAlign = "center";
         ctx.textBaseline = "bottom";
-        ctx.fillText(prodText, px, py - pr - 3);
+        ctx.fillText(prodText, px, py - pr - 2);
       }
     }
 
-    // Render Fleets (Arrowhead Triangles + Ship Count Badges)
-    const arrowHeadSize = Math.max(6, Math.round(drawWidth * 0.014));
+    // Render Fleets — proper chevrons scaled by ship count, matching reference renderer
     for (const f of fleets) {
       const fx = toScreenX(f.x);
       const fy = toScreenY(f.y);
       const pColors = PLAYER_COLORS[f.owner as keyof typeof PLAYER_COLORS] || PLAYER_COLORS[-1];
       const angle = f.angle || 0;
 
-      // Draw Fleet Arrowhead in Owner Color
+      // Scale chevron size by ship count: log scale (same as reference renderer)
+      const sz = Math.max(5, (0.5 + (2.5 * Math.log(Math.max(1, f.ships))) / Math.log(1000)) * scale);
+
+      // Draw chevron using save/translate/rotate for correct orientation
+      ctx.save();
+      ctx.translate(fx, fy);
+      ctx.rotate(angle);
+
       ctx.fillStyle = pColors.main;
       ctx.strokeStyle = pColors.stroke;
       ctx.lineWidth = 1;
       ctx.beginPath();
-      ctx.moveTo(fx + (arrowHeadSize + 2) * Math.cos(angle), fy + (arrowHeadSize + 2) * Math.sin(angle));
-      ctx.lineTo(fx + arrowHeadSize * Math.cos(angle + 2.35), fy + arrowHeadSize * Math.sin(angle + 2.35));
-      ctx.lineTo(fx + arrowHeadSize * Math.cos(angle - 2.35), fy + arrowHeadSize * Math.sin(angle - 2.35));
+      ctx.moveTo(sz, 0);            // tip (pointing in direction of travel)
+      ctx.lineTo(-sz, -sz * 0.7);  // top wing
+      ctx.lineTo(-sz * 0.3, 0);    // inner notch
+      ctx.lineTo(-sz, sz * 0.7);   // bottom wing
       ctx.closePath();
       ctx.fill();
       ctx.stroke();
 
+      // Player 1 gets a center stripe for colorblind accessibility
+      if (f.owner === 1) {
+        ctx.strokeStyle = "rgba(255, 255, 255, 0.55)";
+        ctx.lineWidth = sz * 0.15;
+        ctx.lineCap = "round";
+        ctx.beginPath();
+        ctx.moveTo(sz * 0.8, 0);
+        ctx.lineTo(-sz * 0.2, 0);
+        ctx.stroke();
+      }
+
+      ctx.restore();
+
       // Render Ship Count Badge on Fleet
       if (showFleetNum) {
-        const shipStr = String(f.ships);
-        const fontSize = Math.max(9, Math.round(drawWidth * 0.016));
+        const shipStr = String(Math.floor(f.ships));
+        const fontSize = Math.max(8, Math.round(drawWidth * 0.015));
         ctx.font = `bold ${fontSize}px monospace`;
         const textWidth = ctx.measureText(shipStr).width;
 
+        // Smart label offset: above fleet if in bottom half, below if in top half
+        const inBottomHalf = f.y >= 50;
         const badgeX = fx;
-        const badgeY = fy - arrowHeadSize - 4;
+        const badgeY = inBottomHalf ? fy - sz - 3 : fy + sz + fontSize + 3;
         const padX = 3;
         const padY = 1.5;
 
