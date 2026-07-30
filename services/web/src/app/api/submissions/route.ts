@@ -8,6 +8,11 @@ import { randomUUID } from "crypto";
 
 const MAX_SUBMISSIONS_PER_DAY = 5;
 
+function getTodayStartUTC(): Date {
+  const now = new Date();
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0));
+}
+
 export async function POST(req: NextRequest) {
   const session = await getSession(req);
   if (!session?.user) {
@@ -31,8 +36,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const todayStart = new Date();
-  todayStart.setHours(0, 0, 0, 0);
+  const todayStart = getTodayStartUTC();
 
   const [countResult] = await db
     .select({ count: sql<number>`count(*)::int` })
@@ -44,6 +48,7 @@ export async function POST(req: NextRequest) {
         ne(submissions.status, "rejected")
       )
     );
+
   if ((countResult?.count ?? 0) >= MAX_SUBMISSIONS_PER_DAY) {
     return NextResponse.json(
       {
@@ -114,7 +119,11 @@ export async function GET(req: NextRequest) {
     where: eq(teamMembers.userId, session.user.id),
   });
   if (!membership) {
-    return NextResponse.json([]);
+    return NextResponse.json({
+      submissions: [],
+      totalCount: 0,
+      maxSubmissions: MAX_SUBMISSIONS_PER_DAY,
+    });
   }
 
   const subs = await db.query.submissions.findMany({
@@ -141,10 +150,17 @@ export async function GET(req: NextRequest) {
     ratingsRows.map((r) => [r.submissionId, r])
   );
 
+  const todayStart = getTodayStartUTC();
   const [countResult] = await db
     .select({ count: sql<number>`count(*)::int` })
     .from(submissions)
-    .where(eq(submissions.teamId, membership.teamId));
+    .where(
+      and(
+        eq(submissions.teamId, membership.teamId),
+        gte(submissions.createdAt, todayStart),
+        ne(submissions.status, "rejected")
+      )
+    );
 
   const enriched = subs.map((s) => {
     const r = ratingMap.get(s.id) || null;
