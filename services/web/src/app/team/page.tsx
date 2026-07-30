@@ -104,7 +104,7 @@ export default function TeamPage() {
     }
   };
 
-  if (sessionPending || loading) {
+  if (sessionPending || (session && loading)) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[40vh] space-y-3 font-mono">
         <div className="w-7 h-7 border-2 border-primary border-t-transparent rounded-full animate-spin" />
@@ -117,14 +117,14 @@ export default function TeamPage() {
 
   if (!session) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[40vh] space-y-5 text-center max-w-md mx-auto">
-        <h2 className="text-xl font-bold text-foreground uppercase">[ ACCESS_DENIED ]</h2>
+      <div className="flex flex-col items-center justify-center min-h-[40vh] space-y-5 text-center max-w-md mx-auto font-mono">
+        <h2 className="text-xl font-bold text-foreground uppercase">[ LOGIN_REQUIRED ]</h2>
         <p className="text-muted-foreground text-xs leading-relaxed">
-          Authentication is required to view or edit team settings. Please sign in with your Google account.
+          Authentication is required to view or manage team settings. Please sign in to continue.
         </p>
         <Button
           onClick={() => signIn.social({ provider: "google" })}
-          className="nexus-pill bg-primary hover:bg-primary/90 text-primary-foreground font-bold px-6 py-2"
+          className="nexus-pill bg-primary hover:bg-primary/90 text-primary-foreground font-bold px-6 py-2 cursor-pointer active:scale-95"
         >
           Sign In with Google
         </Button>
