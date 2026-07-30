@@ -314,9 +314,9 @@ export default function SubmissionsPage() {
             <Button
               variant="outline"
               size="sm"
-              loading={loading || autoRefreshing}
+              disabled={loading || autoRefreshing}
               onClick={refreshSubmissions}
-              className="nexus-pill bg-muted border-border text-foreground hover:bg-accent text-xs"
+              className="nexus-pill bg-muted border-border text-foreground hover:bg-accent text-xs cursor-pointer active:scale-95"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${loading || autoRefreshing ? "animate-spin" : ""}`} />
               Refresh
