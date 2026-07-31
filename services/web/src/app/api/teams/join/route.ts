@@ -21,52 +21,34 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const [result] = await db.transaction(async (tx) => {
-      const existing = await tx.query.teamMembers.findFirst({
-        where: eq(teamMembers.userId, session.user.id),
-      });
-      if (existing) {
-        tx.rollback();
-        return [];
-      }
-
-      const team = await tx.query.teams.findFirst({
-        where: eq(teams.teamCode, code),
-      });
-      if (!team) {
-        tx.rollback();
-        return [];
-      }
-
-      await tx.insert(teamMembers).values({
-        teamId: team.id,
-        userId: session.user.id,
-        role: "member",
-      });
-
-      return [team];
+    const existing = await db.query.teamMembers.findFirst({
+      where: eq(teamMembers.userId, session.user.id),
     });
+    if (existing) {
+      return NextResponse.json({ error: "Already on a team" }, { status: 409 });
+    }
 
-    if (!result) {
-      const existing = await db.query.teamMembers.findFirst({
-        where: eq(teamMembers.userId, session.user.id),
-      });
-      if (existing) {
-        return NextResponse.json({ error: "Already on a team" }, { status: 409 });
-      }
+    const team = await db.query.teams.findFirst({
+      where: eq(teams.teamCode, code),
+    });
+    if (!team) {
       return NextResponse.json({ error: "Team not found" }, { status: 404 });
     }
 
+    await db.insert(teamMembers).values({
+      teamId: team.id,
+      userId: session.user.id,
+      role: "member",
+    });
+
     return NextResponse.json({
-      ...result,
-      team_code: result.teamCode,
-      owner_id: result.ownerId,
-      created_at: result.createdAt,
+      ...team,
+      team_code: team.teamCode,
+      owner_id: team.ownerId,
+      created_at: team.createdAt,
     });
   } catch (error: unknown) {
-    if (error instanceof Error && error.message === "Already on a team") {
-      return NextResponse.json({ error: "Already on a team" }, { status: 409 });
-    }
-    throw error;
+    console.error("Error joining team:", error);
+    return NextResponse.json({ error: "Failed to join team" }, { status: 500 });
   }
 }

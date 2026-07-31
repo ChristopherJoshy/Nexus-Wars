@@ -28,7 +28,10 @@ export async function GET(req: NextRequest) {
   const submissionId = searchParams.get("submissionId");
 
     try {
-    const baseWhere = eq(matches.status, "finished");
+    const baseWhere = submissionId
+      ? eq(matches.status, "finished")
+      : and(eq(matches.status, "finished"), eq(matches.kind, "rated"));
+
     const teamOrSubmissionWhere = teamId
       ? or(eq(matches.teamAId, teamId), eq(matches.teamBId, teamId))
       : submissionId
