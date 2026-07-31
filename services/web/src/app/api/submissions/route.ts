@@ -73,10 +73,10 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024; // 5 MB
+  const MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024; // 50 MB
   if (file.size > MAX_FILE_SIZE_BYTES) {
     return NextResponse.json(
-      { error: "File size exceeds 5 MB limit" },
+      { error: "File size exceeds 50 MB limit" },
       { status: 400 }
     );
   }
