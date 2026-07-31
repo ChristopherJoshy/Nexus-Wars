@@ -68,8 +68,12 @@ export default function LeaderboardPage() {
     // Load from clientCache after mounting to prevent SSR hydration mismatch
     const cached = clientCache.getLeaderboard();
     if (cached && cached.length > 0) {
-      setEntries(cached);
-      setLoading(false);
+      Promise.resolve().then(() => {
+        if (isCurrent) {
+          setEntries(cached);
+          setLoading(false);
+        }
+      });
     }
 
     const headers: Record<string, string> = {};

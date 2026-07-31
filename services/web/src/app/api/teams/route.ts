@@ -81,7 +81,14 @@ export async function POST(req: NextRequest) {
     });
 
     if (existing) {
-      // User is already on a team -> Update existing team name
+      if (existing.role !== "owner") {
+        return NextResponse.json(
+          { error: "Only team leaders can edit the team name" },
+          { status: 403 }
+        );
+      }
+
+      // User is owner -> Update existing team name
       await db
         .update(teams)
         .set({ name })
@@ -164,6 +171,13 @@ export async function PATCH(req: NextRequest) {
 
   if (!existing) {
     return NextResponse.json({ error: "No team found" }, { status: 404 });
+  }
+
+  if (existing.role !== "owner") {
+    return NextResponse.json(
+      { error: "Only team leaders can edit the team name" },
+      { status: 403 }
+    );
   }
 
   await db

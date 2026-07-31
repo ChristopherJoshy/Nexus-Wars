@@ -28,8 +28,15 @@ export default function TeamPage() {
   const [joinCode, setJoinCode] = useState("");
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [savedSuccess, setSavedSuccess] = useState(false);
+
+  const isOwner =
+    !team ||
+    team.owner_id === session?.user?.id ||
+    team.members?.some(
+      (m) => m.userId === session?.user?.id && m.role === "owner"
+    );
 
   useEffect(() => {
     if (!session) return;
@@ -41,7 +48,7 @@ export default function TeamPage() {
         throw new Error("No team found");
       })
       .then((data) => {
-        setError(false);
+        setErrorMsg(null);
         setTeam(data);
         setTeamName(data.name || "");
       })
@@ -50,8 +57,8 @@ export default function TeamPage() {
   }, [session]);
 
   const saveTeamName = async () => {
-    if (!session || !teamName) return;
-    setError(false);
+    if (!session || !teamName || (team && !isOwner)) return;
+    setErrorMsg(null);
     setSubmitting(true);
     try {
       const method = team ? "PATCH" : "POST";
@@ -70,10 +77,11 @@ export default function TeamPage() {
         setSavedSuccess(true);
         setTimeout(() => setSavedSuccess(false), 2500);
       } else {
-        throw new Error("Save failed");
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || "Save failed");
       }
-    } catch {
-      setError(true);
+    } catch (err: unknown) {
+      setErrorMsg(err instanceof Error ? err.message : "An error occurred while saving team settings.");
     } finally {
       setSubmitting(false);
     }
@@ -81,7 +89,7 @@ export default function TeamPage() {
 
   const joinTeam = async () => {
     if (!session) return;
-    setError(false);
+    setErrorMsg(null);
     setSubmitting(true);
     try {
       const res = await fetch("/api/teams/join", {
@@ -97,10 +105,11 @@ export default function TeamPage() {
         setTeam(joined);
         setTeamName(joined.name);
       } else {
-        throw new Error("Join failed");
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || "Join failed");
       }
-    } catch {
-      setError(true);
+    } catch (err: unknown) {
+      setErrorMsg(err instanceof Error ? err.message : "An error occurred while joining team.");
     } finally {
       setSubmitting(false);
     }
@@ -149,9 +158,9 @@ export default function TeamPage() {
         </div>
       )}
 
-      {error && (
+      {errorMsg && (
         <div className="bg-destructive/10 border border-destructive/30 text-destructive rounded-lg p-3 text-xs font-mono">
-          [ ERROR ] An error occurred while saving team settings.
+          [ ERROR ] {errorMsg}
         </div>
       )}
 
@@ -167,14 +176,21 @@ export default function TeamPage() {
             <input
               type="text"
               value={teamName}
+              disabled={team !== null && !isOwner}
               onChange={(e) => setTeamName(e.target.value)}
               placeholder="Enter your team name"
-              className="w-full bg-transparent text-sm text-foreground outline-none font-sans font-medium uppercase"
+              className="w-full bg-transparent text-sm text-foreground outline-none font-sans font-medium uppercase disabled:opacity-60 disabled:cursor-not-allowed"
             />
           </div>
-          <span className="text-[11px] text-muted-foreground block pl-1">
-            This name appears on the leaderboard.
-          </span>
+          {team && !isOwner ? (
+            <span className="text-[11px] text-amber-500/90 font-mono block pl-1">
+              [ NOTE ] Only team leaders can edit the team name.
+            </span>
+          ) : (
+            <span className="text-[11px] text-muted-foreground block pl-1">
+              This name appears on the leaderboard.
+            </span>
+          )}
         </div>
       </div>
 
@@ -260,8 +276,8 @@ export default function TeamPage() {
         <Button
           onClick={saveTeamName}
           loading={submitting}
-          disabled={!teamName || submitting}
-          className="nexus-pill bg-primary hover:bg-primary/90 text-primary-foreground font-bold px-6 py-2 text-xs"
+          disabled={!teamName || submitting || (team !== null && !isOwner)}
+          className="nexus-pill bg-primary hover:bg-primary/90 text-primary-foreground font-bold px-6 py-2 text-xs disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {team ? "Save Changes" : "Create Team"}
         </Button>
