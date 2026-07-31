@@ -31,12 +31,16 @@ export default function TeamPage() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [savedSuccess, setSavedSuccess] = useState(false);
 
+  const currentUserMember = team?.members?.find((m) =>
+    (m.email && session?.user?.email && m.email.toLowerCase() === session.user.email.toLowerCase()) ||
+    m.userId === session?.user?.id
+  );
+
   const isOwner =
     !team ||
-    team.owner_id === session?.user?.id ||
-    team.members?.some(
-      (m) => m.userId === session?.user?.id && m.role === "owner"
-    );
+    (currentUserMember
+      ? currentUserMember.role === "owner"
+      : team.owner_id === session?.user?.id);
 
   useEffect(() => {
     if (!session) return;
@@ -200,36 +204,42 @@ export default function TeamPage() {
           <h3 className="text-sm font-bold text-foreground">Team Members</h3>
 
           <div className="space-y-2 max-w-sm">
-            {team.members.map((member) => (
-              <div
-                key={member.userId}
-                className="flex items-center gap-3 bg-muted border border-border p-3 rounded-lg"
-              >
-                {member.image ? (
-                  <img
-                    src={member.image}
-                    alt={member.name || "Member Avatar"}
-                    className="w-10 h-10 rounded-full object-cover border border-primary/50"
-                  />
-                ) : (
-                  <div className="w-10 h-10 rounded-full bg-primary/20 text-foreground font-bold flex items-center justify-center border border-primary">
-                    {(member.name || "U")[0].toUpperCase()}
-                  </div>
-                )}
+            {team.members.map((member) => {
+              const isCurrentUser =
+                (member.email && session.user.email && member.email.toLowerCase() === session.user.email.toLowerCase()) ||
+                member.userId === session.user.id;
 
-                <div>
-                  <div className="text-xs font-semibold text-foreground">
-                    {member.name || "Participant"}
-                    {member.userId === session.user.id && (
-                      <span className="text-muted-foreground"> (You)</span>
-                    )}
-                  </div>
-                  <div className="text-[11px] text-muted-foreground">
-                    {member.role === "owner" ? "Team Leader" : "Member"}
+              return (
+                <div
+                  key={member.userId}
+                  className="flex items-center gap-3 bg-muted border border-border p-3 rounded-lg"
+                >
+                  {member.image ? (
+                    <img
+                      src={member.image}
+                      alt={member.name || "Member Avatar"}
+                      className="w-10 h-10 rounded-full object-cover border border-primary/50"
+                    />
+                  ) : (
+                    <div className="w-10 h-10 rounded-full bg-primary/20 text-foreground font-bold flex items-center justify-center border border-primary">
+                      {(member.name || "U")[0].toUpperCase()}
+                    </div>
+                  )}
+
+                  <div>
+                    <div className="text-xs font-semibold text-foreground">
+                      {member.name || "Participant"}
+                      {isCurrentUser && (
+                        <span className="text-muted-foreground"> (You)</span>
+                      )}
+                    </div>
+                    <div className="text-[11px] text-muted-foreground">
+                      {member.role === "owner" ? "Team Leader" : "Member"}
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
