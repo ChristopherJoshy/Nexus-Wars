@@ -11,24 +11,20 @@ const ASCII_ART = `
 `;
 
 export function AsciiLoader() {
-  const [visible, setVisible] = useState(() => {
-    if (typeof window !== "undefined") {
-      const navEntries = performance.getEntriesByType("navigation") as PerformanceNavigationTiming[];
-      const isReload = navEntries.length > 0 && navEntries[0].type === "reload";
-      const isFirstVisit = !sessionStorage.getItem("nexus_visited");
-      return isReload || isFirstVisit;
-    }
-    return false;
-  });
+  const [visible, setVisible] = useState(false);
   const [fading, setFading] = useState(false);
   const [logs, setLogs] = useState<string[]>([]);
 
   useEffect(() => {
-    if (!visible) return;
+    if (typeof window === "undefined") return;
+    const navEntries = performance.getEntriesByType("navigation") as PerformanceNavigationTiming[];
+    const isReload = navEntries.length > 0 && navEntries[0].type === "reload";
+    const isFirstVisit = !sessionStorage.getItem("nexus_visited");
 
-    if (typeof window !== "undefined") {
-      sessionStorage.setItem("nexus_visited", "1");
-    }
+    if (!isReload && !isFirstVisit) return;
+
+    sessionStorage.setItem("nexus_visited", "1");
+    Promise.resolve().then(() => setVisible(true));
 
     const bootSequence = [
       "[ SYS ] INITIALIZING NEXUS KERNEL 2026...",
@@ -55,7 +51,7 @@ export function AsciiLoader() {
       clearTimeout(fadeTimer);
       clearTimeout(removeTimer);
     };
-  }, [visible]);
+  }, []);
 
   if (!visible) return null;
 
