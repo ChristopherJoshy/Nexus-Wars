@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { useSession } from "@/lib/auth-client";
+import { clientCache } from "@/lib/client-cache";
 import { animate } from "animejs";
 
 import { Skeleton } from "@/components/ui/skeleton";
@@ -54,15 +55,23 @@ function formatRelativeTime(dateInput: Date | string | number | null | undefined
 export default function LeaderboardPage() {
   const { data: session } = useSession();
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [autoRefreshing, setAutoRefreshing] = useState(false);
+  const [loading, setLoading] = useState<boolean>(true);
   const [searchQuery, setSearchQuery] = useState("");
+  const [autoRefreshing, setAutoRefreshing] = useState(false);
   const [reloadToken, setReloadToken] = useState(0);
   const tableRef = useRef<HTMLTableSectionElement>(null);
 
   // Initial fetch and manual reload handler
   useEffect(() => {
     let isCurrent = true;
+
+    // Load from clientCache after mounting to prevent SSR hydration mismatch
+    const cached = clientCache.getLeaderboard();
+    if (cached && cached.length > 0) {
+      setEntries(cached);
+      setLoading(false);
+    }
+
     const headers: Record<string, string> = {};
     if (session?.token) headers["Authorization"] = `Bearer ${session.token}`;
 
@@ -73,6 +82,7 @@ export default function LeaderboardPage() {
       })
       .then((data: LeaderboardEntry[]) => {
         if (isCurrent) {
+          clientCache.setLeaderboard(data);
           setEntries(data);
           setLoading(false);
           setAutoRefreshing(false);
@@ -80,7 +90,6 @@ export default function LeaderboardPage() {
       })
       .catch(() => {
         if (isCurrent) {
-          setEntries([]);
           setLoading(false);
           setAutoRefreshing(false);
         }

@@ -18,6 +18,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { ReplayRenderer } from "@/components/replay/ReplayRenderer";
 import { useSession } from "@/lib/auth-client";
+import { clientCache } from "@/lib/client-cache";
 import { animate } from "animejs";
 
 interface MatchItem {
@@ -122,13 +123,19 @@ export default function MatchReplayPage({
       });
   }, [matchIdParam]);
 
-  // Fetch Replay Data when selectedMatch changes
+  // Fetch Replay Data when selectedMatch changes (with client memory cache for 0ms loads)
   useEffect(() => {
     if (!selectedMatch) return;
 
-    setReplay(null);
-    setStep(0);
-    setPlaying(false);
+    const cached = clientCache.getReplay(selectedMatch.id);
+    if (cached) {
+      Promise.resolve().then(() => {
+        setReplay(cached);
+        setStep(0);
+        setPlaying(false);
+      });
+      return;
+    }
 
     const headers: Record<string, string> = {};
     if (session?.token) headers["Authorization"] = `Bearer ${session.token}`;
@@ -139,7 +146,10 @@ export default function MatchReplayPage({
         return res.json();
       })
       .then((data: ReplayData) => {
+        clientCache.setReplay(selectedMatch.id, data);
         setReplay(data);
+        setStep(0);
+        setPlaying(false);
       })
       .catch(() => {
         setReplay(null);
@@ -294,6 +304,13 @@ export default function MatchReplayPage({
                     )}
                   </div>
                 </div>
+
+                {/* Relative time */}
+                {m.relativeTime && (
+                  <div className="text-[10px] text-muted-foreground/70 mt-1 font-mono">
+                    {m.relativeTime}
+                  </div>
+                )}
               </button>
             );
           })}

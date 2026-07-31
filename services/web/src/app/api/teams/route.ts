@@ -21,6 +21,45 @@ function sanitizeName(name: unknown): string | null {
   return trimmed;
 }
 
+async function getFullTeamForUser(userId: string) {
+  const membership = await db.query.teamMembers.findFirst({
+    where: eq(teamMembers.userId, userId),
+  });
+  if (!membership) return null;
+
+  const [team] = await db
+    .select({
+      id: teams.id,
+      name: teams.name,
+      teamCode: teams.teamCode,
+      team_code: teams.teamCode,
+      ownerId: teams.ownerId,
+      owner_id: teams.ownerId,
+      createdAt: teams.createdAt,
+      created_at: teams.createdAt,
+    })
+    .from(teams)
+    .where(eq(teams.id, membership.teamId))
+    .limit(1);
+
+  if (!team) return null;
+
+  const members = await db
+    .select({
+      userId: teamMembers.userId,
+      role: teamMembers.role,
+      joinedAt: teamMembers.joinedAt,
+      name: users.name,
+      email: users.email,
+      image: users.image,
+    })
+    .from(teamMembers)
+    .innerJoin(users, eq(teamMembers.userId, users.id))
+    .where(eq(teamMembers.teamId, team.id));
+
+  return { ...team, members };
+}
+
 export async function POST(req: NextRequest) {
   const session = await getSession(req);
   if (!session?.user) {
@@ -37,15 +76,23 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const [team] = await db.transaction(async (tx) => {
-      const existing = await tx.query.teamMembers.findFirst({
-        where: eq(teamMembers.userId, session.user.id),
-      });
-      if (existing) {
-        tx.rollback();
-        return [];
-      }
+    const existing = await db.query.teamMembers.findFirst({
+      where: eq(teamMembers.userId, session.user.id),
+    });
 
+    if (existing) {
+      // User is already on a team -> Update existing team name
+      await db
+        .update(teams)
+        .set({ name })
+        .where(eq(teams.id, existing.teamId));
+
+      const updatedTeam = await getFullTeamForUser(session.user.id);
+      return NextResponse.json(updatedTeam);
+    }
+
+    // User is NOT on a team -> Create a new team
+    const team = await db.transaction(async (tx) => {
       let t: typeof teams.$inferSelect | undefined;
       for (let attempt = 0; attempt < 5; attempt++) {
         try {
@@ -85,25 +132,47 @@ export async function POST(req: NextRequest) {
 
       await tx.insert(ratings).values({ teamId: t.id });
 
-      return [t];
+      return t;
     });
 
-    if (!team) {
-      return NextResponse.json({ error: "Already on a team" }, { status: 409 });
-    }
-
-    return NextResponse.json({
-      ...team,
-      team_code: team.teamCode,
-      owner_id: team.ownerId,
-      created_at: team.createdAt,
-    });
+    const fullTeam = await getFullTeamForUser(session.user.id);
+    return NextResponse.json(fullTeam || team);
   } catch (error: unknown) {
-    if (error instanceof Error && error.message === "Already on a team") {
-      return NextResponse.json({ error: "Already on a team" }, { status: 409 });
-    }
-    throw error;
+    console.error("Error saving team:", error);
+    return NextResponse.json({ error: "Failed to save team settings" }, { status: 500 });
   }
+}
+
+export async function PATCH(req: NextRequest) {
+  const session = await getSession(req);
+  if (!session?.user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const { name: rawName } = await req.json();
+  const name = sanitizeName(rawName);
+  if (!name) {
+    return NextResponse.json(
+      { error: "Team name must be 2-32 chars (alphanumeric, spaces, hyphens, underscores)" },
+      { status: 400 }
+    );
+  }
+
+  const existing = await db.query.teamMembers.findFirst({
+    where: eq(teamMembers.userId, session.user.id),
+  });
+
+  if (!existing) {
+    return NextResponse.json({ error: "No team found" }, { status: 404 });
+  }
+
+  await db
+    .update(teams)
+    .set({ name })
+    .where(eq(teams.id, existing.teamId));
+
+  const updatedTeam = await getFullTeamForUser(session.user.id);
+  return NextResponse.json(updatedTeam);
 }
 
 export async function GET(req: NextRequest) {
@@ -112,44 +181,10 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const membership = await db.query.teamMembers.findFirst({
-    where: eq(teamMembers.userId, session.user.id),
-  });
-  if (!membership) {
-    return NextResponse.json({ error: "No team" }, { status: 404 });
-  }
-
-  const [team] = await db
-    .select({
-      id: teams.id,
-      name: teams.name,
-      teamCode: teams.teamCode,
-      team_code: teams.teamCode,
-      ownerId: teams.ownerId,
-      owner_id: teams.ownerId,
-      createdAt: teams.createdAt,
-      created_at: teams.createdAt,
-    })
-    .from(teams)
-    .where(eq(teams.id, membership.teamId))
-    .limit(1);
-
+  const team = await getFullTeamForUser(session.user.id);
   if (!team) {
     return NextResponse.json({ error: "No team" }, { status: 404 });
   }
 
-  const members = await db
-    .select({
-      userId: teamMembers.userId,
-      role: teamMembers.role,
-      joinedAt: teamMembers.joinedAt,
-      name: users.name,
-      email: users.email,
-      image: users.image,
-    })
-    .from(teamMembers)
-    .innerJoin(users, eq(teamMembers.userId, users.id))
-    .where(eq(teamMembers.teamId, team.id));
-
-  return NextResponse.json({ ...team, members });
+  return NextResponse.json(team);
 }

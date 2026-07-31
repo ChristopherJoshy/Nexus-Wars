@@ -54,8 +54,9 @@ export default function TeamPage() {
     setError(false);
     setSubmitting(true);
     try {
+      const method = team ? "PATCH" : "POST";
       const res = await fetch("/api/teams", {
-        method: "POST",
+        method,
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${session.token}`,
@@ -65,6 +66,7 @@ export default function TeamPage() {
       if (res.ok) {
         const updated = await res.json();
         setTeam(updated);
+        setTeamName(updated.name || "");
         setSavedSuccess(true);
         setTimeout(() => setSavedSuccess(false), 2500);
       } else {

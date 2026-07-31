@@ -21,6 +21,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ReplayRenderer } from "@/components/replay/ReplayRenderer";
 import { useSession } from "@/lib/auth-client";
+import { clientCache } from "@/lib/client-cache";
 import { animate } from "animejs";
 
 interface MatchItem {
@@ -153,9 +154,15 @@ function GameHistoryContent() {
       });
   }, [teamId, submissionId, teamNameParam]);
 
-  // Fetch Replay Data when selectedMatch changes
+  // Fetch Replay Data when selectedMatch changes (with client memory cache for 0ms loads)
   useEffect(() => {
     if (!selectedMatch) return;
+
+    const cached = clientCache.getReplay(selectedMatch.id);
+    if (cached) {
+      Promise.resolve().then(() => setReplay(cached));
+      return;
+    }
 
     const headers: Record<string, string> = {};
     if (session?.token) headers["Authorization"] = `Bearer ${session.token}`;
@@ -166,6 +173,7 @@ function GameHistoryContent() {
         return res.json();
       })
       .then((data: ReplayData) => {
+        clientCache.setReplay(selectedMatch.id, data);
         setReplay(data);
       })
       .catch(() => {
@@ -265,18 +273,31 @@ function GameHistoryContent() {
 
   const downloadMatchJson = (e: React.MouseEvent, matchId: string) => {
     e.stopPropagation();
+
+    const triggerDownload = (jsonObj: unknown) => {
+      const blob = new Blob([JSON.stringify(jsonObj, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `match-${matchId}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    };
+
+    const cached = clientCache.getReplay(matchId);
+    if (cached) {
+      triggerDownload(cached);
+      return;
+    }
+
     const headers: Record<string, string> = {};
     if (session?.token) headers["Authorization"] = `Bearer ${session.token}`;
 
     fetch(`/api/replays/${matchId}`, { headers })
-      .then((res) => res.blob())
-      .then((blob) => {
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = `match-${matchId}.json`;
-        a.click();
-        URL.revokeObjectURL(url);
+      .then((res) => res.json())
+      .then((data) => {
+        clientCache.setReplay(matchId, data);
+        triggerDownload(data);
       })
       .catch(() => {});
   };
@@ -470,6 +491,13 @@ function GameHistoryContent() {
                         )}
                       </div>
                     </div>
+
+                    {/* Relative time */}
+                    {m.relativeTime && (
+                      <div className="text-[10px] text-muted-foreground/70 mt-1 font-mono">
+                        {m.relativeTime}
+                      </div>
+                    )}
                   </div>
 
                   <button
