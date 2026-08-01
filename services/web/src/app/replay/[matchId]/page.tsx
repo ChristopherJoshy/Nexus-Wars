@@ -519,21 +519,21 @@ export default function MatchReplayPage({
             const loseChangeStr = loserChange > 0 ? `+${loserChange}` : `${loserChange}`;
 
             return (
-              <div className="absolute inset-x-0 z-30 pointer-events-none flex items-center justify-center px-2">
-                <div className="w-full bg-gradient-to-r from-black/0 via-black/92 to-black/0 py-6 sm:py-8 border-y border-red-900/60 backdrop-blur-xs flex flex-col items-center justify-center text-center shadow-2xl transition-all duration-700 animate-in fade-in zoom-in-95">
-                  <h2 className="font-serif text-3xl sm:text-5xl font-extrabold uppercase tracking-[0.35em] text-[#b91c1c] drop-shadow-[0_4px_20px_rgba(185,28,28,0.85)] select-none">
+              <div className="absolute inset-x-0 z-30 pointer-events-none flex items-center justify-center">
+                <div className="w-full bg-stone-950/95 py-6 sm:py-8 border-y-2 border-amber-600/80 flex flex-col items-center justify-center text-center shadow-[0_10px_40px_rgba(0,0,0,0.9)] transition-all duration-700 animate-in fade-in zoom-in-95">
+                  <h2 className="font-serif text-4xl sm:text-6xl font-black uppercase tracking-[0.4em] text-red-500 drop-shadow-[0_2px_10px_rgba(0,0,0,1)] select-none">
                     GAME OVER
                   </h2>
                   {isDraw ? (
-                    <div className="font-serif tracking-widest text-xs sm:text-sm text-amber-200/90 mt-2">
+                    <div className="font-serif tracking-widest text-sm sm:text-base text-amber-300 font-semibold mt-2.5 drop-shadow-[0_1px_3px_rgba(0,0,0,0.9)]">
                       Match ended in a draw!
                     </div>
                   ) : (
-                    <div className="font-serif tracking-widest text-xs sm:text-sm text-amber-200/90 mt-2">
+                    <div className="font-serif tracking-widest text-sm sm:text-base text-amber-300 font-semibold mt-2.5 drop-shadow-[0_1px_3px_rgba(0,0,0,0.9)]">
                       [1st] {winnerName} ({winChangeStr}) wins!
                     </div>
                   )}
-                  <div className="font-mono text-[10px] sm:text-xs text-stone-400/80 mt-1 tracking-wider">
+                  <div className="font-mono text-xs sm:text-sm text-stone-200 font-medium mt-1.5 tracking-wider drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]">
                     {isDraw ? (
                       `[1st] ${selectedMatch.teamA} (0) — [1st] ${selectedMatch.teamB} (0)`
                     ) : (
