@@ -133,7 +133,7 @@ function GameHistoryContent() {
 
   // Fetch Game History Match List (with client cache for 15s)
   useEffect(() => {
-    const cacheKey = teamId || submissionId || "all";
+    const cacheKey = submissionId ? `sub:${submissionId}` : teamId ? `team:${teamId}` : "all";
     const cached = clientCache.getMatchList(cacheKey);
     if (cached && cached.length > 0) {
       Promise.resolve().then(() => {

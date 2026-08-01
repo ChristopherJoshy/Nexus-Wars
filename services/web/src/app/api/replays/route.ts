@@ -9,29 +9,19 @@ export async function GET(req: NextRequest) {
   const submissionId = searchParams.get("submissionId");
 
   try {
-    let effectiveTeamId = teamIdParam;
-    if (!effectiveTeamId && submissionId) {
-      const sub = await db.query.submissions.findFirst({
-        where: eq(submissions.id, submissionId),
-      });
-      if (sub?.teamId) {
-        effectiveTeamId = sub.teamId;
-      }
-    }
-
     const baseWhere = eq(matches.status, "finished");
 
-    // Prioritize teamId filtering over submissionId when both are provided
-    // (e.g. from leaderboard links that pass both). This ensures all team
-    // matches are shown, not just the ones for a specific submission.
-    const teamOrSubmissionWhere = effectiveTeamId
-      ? or(eq(matches.teamAId, effectiveTeamId), eq(matches.teamBId, effectiveTeamId))
-      : submissionId
-        ? or(eq(matches.submissionAId, submissionId), eq(matches.submissionBId, submissionId))
+    // If submissionId is provided (e.g. from Submissions page "Episodes" button),
+    // strictly filter matches played by that specific bot submission.
+    // Otherwise, if teamIdParam is provided (e.g. from Leaderboard link), filter by team.
+    const filterWhere = submissionId
+      ? or(eq(matches.submissionAId, submissionId), eq(matches.submissionBId, submissionId))
+      : teamIdParam
+        ? or(eq(matches.teamAId, teamIdParam), eq(matches.teamBId, teamIdParam))
         : undefined;
 
-    const whereClause = teamOrSubmissionWhere
-      ? and(baseWhere, teamOrSubmissionWhere)
+    const whereClause = filterWhere
+      ? and(baseWhere, filterWhere)
       : and(baseWhere, eq(matches.kind, "rated"));
 
     const recentMatches = await db
