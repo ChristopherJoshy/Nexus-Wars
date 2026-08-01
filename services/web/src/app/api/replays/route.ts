@@ -3,25 +3,6 @@ import { db } from "@/lib/db";
 import { matches, teams, matchParticipants, submissions } from "@/lib/db/schema";
 import { eq, or, and, desc, inArray } from "drizzle-orm";
 
-function formatRelativeTime(dateInput: Date | string | null | undefined): string {
-  if (!dateInput) return "Just now";
-  const date = typeof dateInput === "string" ? new Date(dateInput) : dateInput;
-  const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
-  const diffSecs = Math.floor(diffMs / 1000);
-  if (diffSecs < 60) return "Just now";
-  const diffMins = Math.floor(diffSecs / 60);
-  if (diffMins < 60) return `${diffMins}m ago`;
-  const diffHours = Math.floor(diffMins / 60);
-  if (diffHours < 24) return `${diffHours}h ago`;
-  const diffDays = Math.floor(diffHours / 24);
-  if (diffDays < 30) return `${diffDays}d ago`;
-  const diffMonths = Math.floor(diffDays / 30);
-  if (diffMonths < 12) return `${diffMonths}mo ago`;
-  const diffYears = Math.floor(diffDays / 365);
-  return `${diffYears}y ago`;
-}
-
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const teamIdParam = searchParams.get("teamId");
@@ -40,10 +21,13 @@ export async function GET(req: NextRequest) {
 
     const baseWhere = eq(matches.status, "finished");
 
-    const teamOrSubmissionWhere = submissionId
-      ? or(eq(matches.submissionAId, submissionId), eq(matches.submissionBId, submissionId))
-      : effectiveTeamId
-        ? or(eq(matches.teamAId, effectiveTeamId), eq(matches.teamBId, effectiveTeamId))
+    // Prioritize teamId filtering over submissionId when both are provided
+    // (e.g. from leaderboard links that pass both). This ensures all team
+    // matches are shown, not just the ones for a specific submission.
+    const teamOrSubmissionWhere = effectiveTeamId
+      ? or(eq(matches.teamAId, effectiveTeamId), eq(matches.teamBId, effectiveTeamId))
+      : submissionId
+        ? or(eq(matches.submissionAId, submissionId), eq(matches.submissionBId, submissionId))
         : undefined;
 
     const whereClause = teamOrSubmissionWhere
@@ -70,8 +54,8 @@ export async function GET(req: NextRequest) {
       })
       .from(matches)
       .where(whereClause)
-      .orderBy(desc(matches.createdAt))
-      .limit(100);
+      .orderBy(desc(matches.finishedAt), desc(matches.createdAt))
+      .limit(500);
 
     const allTeams = await db.select({ id: teams.id, name: teams.name }).from(teams);
     const teamMap = new Map(allTeams.map((t) => [t.id, t.name]));
@@ -124,6 +108,7 @@ export async function GET(req: NextRequest) {
       else if (m.winner === "b") winnerName = teamBName;
 
       const createdDate = m.createdAt ? new Date(m.createdAt) : new Date();
+      const finishedDate = m.finishedAt ? new Date(m.finishedAt) : null;
 
       return {
         id: m.id,
@@ -139,7 +124,7 @@ export async function GET(req: NextRequest) {
         winnerName,
         scores: Array.isArray(m.scores) ? m.scores : [],
         createdAt: createdDate.toISOString(),
-        relativeTime: formatRelativeTime(createdDate),
+        finishedAt: finishedDate ? finishedDate.toISOString() : null,
         submissionAId: m.submissionAId,
         submissionBId: m.submissionBId,
       };

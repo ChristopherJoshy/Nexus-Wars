@@ -20,6 +20,7 @@ import { ReplayRenderer } from "@/components/replay/ReplayRenderer";
 import { useSession } from "@/lib/auth-client";
 import { clientCache } from "@/lib/client-cache";
 import { animate } from "animejs";
+import { formatRelativeTime, useTick } from "@/lib/time";
 
 interface MatchItem {
   id: string;
@@ -33,7 +34,7 @@ interface MatchItem {
   winnerName: string | null;
   scores: number[];
   createdAt: string;
-  relativeTime: string;
+  finishedAt: string | null;
 }
 
 interface StepData {
@@ -87,7 +88,30 @@ export default function MatchReplayPage({
   const [showTrajectories, setShowTrajectories] = useState(false);
   const [fleetSizeFilter, setFleetSizeFilter] = useState<"all" | "small" | "medium" | "large">("all");
 
+  const [canvasDim, setCanvasDim] = useState(540);
+  const canvasContainerRef = useRef<HTMLDivElement>(null);
+
+  // Re-render every second to keep relative time labels fresh
+  useTick(1000);
+
   const sidebarRef = useRef<HTMLDivElement>(null);
+
+  // Responsive canvas sizing via ResizeObserver
+  useEffect(() => {
+    const el = canvasContainerRef.current;
+    if (!el) return;
+
+    const updateSize = () => {
+      const rect = el.getBoundingClientRect();
+      const available = Math.max(320, Math.min(rect.width - 24, rect.height - 24));
+      setCanvasDim(Math.floor(available));
+    };
+
+    updateSize();
+    const observer = new ResizeObserver(updateSize);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(() => {
     params.then((p) => {
@@ -102,14 +126,30 @@ export default function MatchReplayPage({
     setPlaying(false);
   };
 
-  // Fetch Game History Match List
+  // Fetch Game History Match List (with client cache for 15s)
   useEffect(() => {
+    const cacheKey = "all";
+    const cached = clientCache.getMatchList(cacheKey);
+    if (cached && cached.length > 0) {
+      Promise.resolve().then(() => {
+        setMatchList(cached);
+        const found = cached.find((m) => m.id === matchIdParam);
+        if (found) {
+          setSelectedMatch(found);
+        } else if (cached.length > 0) {
+          setSelectedMatch(cached[0]);
+        }
+      });
+      return;
+    }
+
     fetch("/api/replays")
       .then((res) => {
         if (!res.ok) throw new Error("Fetch failed");
         return res.json();
       })
       .then((data: MatchItem[]) => {
+        clientCache.setMatchList(cacheKey, data);
         setMatchList(data);
         const found = data.find((m) => m.id === matchIdParam);
         if (found) {
@@ -238,7 +278,7 @@ export default function MatchReplayPage({
         <div className="p-3 border-b border-border flex items-center justify-between text-xs font-mono bg-muted/10">
           <div>
             <span className="text-foreground font-bold uppercase">Recent duels</span>
-            <div className="text-[10px] text-muted-foreground">1865 (1770 - 1884)</div>
+            <div className="text-[10px] text-muted-foreground">{matchList.length} matches</div>
           </div>
           <div className="flex items-center gap-1.5">
             <Button
@@ -262,9 +302,11 @@ export default function MatchReplayPage({
 
         {/* Match History List */}
         <div ref={sidebarRef} className="flex-1 overflow-y-auto p-3 space-y-3 font-mono">
-          <div className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold px-1">
-            20d ago
-          </div>
+            {matchList.length > 0 && (
+            <div className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold px-1">
+              {matchList.length} matches recorded
+            </div>
+          )}
 
           {matchList.map((m) => {
             const isSelected = selectedMatch?.id === m.id;
@@ -305,12 +347,10 @@ export default function MatchReplayPage({
                   </div>
                 </div>
 
-                {/* Relative time */}
-                {m.relativeTime && (
-                  <div className="text-[10px] text-muted-foreground/70 mt-1 font-mono">
-                    {m.relativeTime}
-                  </div>
-                )}
+                {/* Relative time (computed client-side for live updates) */}
+                <div className="text-[10px] text-muted-foreground/70 mt-1 font-mono">
+                  {formatRelativeTime(m.finishedAt || m.createdAt)}
+                </div>
               </button>
             );
           })}
@@ -398,12 +438,12 @@ export default function MatchReplayPage({
         )}
 
         {/* Center Space Canvas Visualizer */}
-        <div className="flex-1 flex items-center justify-center p-5 sm:p-8 bg-background relative overflow-hidden">
+        <div ref={canvasContainerRef} className="flex-1 flex items-center justify-center p-5 sm:p-8 bg-background min-w-0 h-full">
           {currentStep ? (
             <ReplayRenderer
               step={currentStep}
-              width={540}
-              height={540}
+              width={canvasDim}
+              height={canvasDim}
               showFleetNum={showFleetNum}
               showProduction={showProduction}
               showTrajectories={showTrajectories}

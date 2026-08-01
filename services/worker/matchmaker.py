@@ -2,6 +2,7 @@ import json
 import os
 import secrets
 import sys
+from datetime import datetime, timezone, timedelta
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "engine", "nexus_wars"))
 
@@ -9,9 +10,9 @@ from db import get_conn, execute, execute_returning, query
 from jobs import engine_config
 
 MATCHMAKER_LOCK = 87349201
-RATING_GAP_SOFT_FACTOR = 0.40
-RATING_GAP_HARD_FACTOR = 0.70
-RECENCY_PENALTY_BASE = 15.0
+RATING_GAP_SOFT_FACTOR = 0.20
+RATING_GAP_HARD_FACTOR = 0.35
+RECENCY_PENALTY_BASE = 20.0
 LOAD_PENALTY_BASE = 4.0
 
 
@@ -32,8 +33,8 @@ def _compute_dynamic_params(n_teams, rating_spread):
     # Minimal agent cooldown: 3 seconds (0.05 min) so bots re-enter matching as soon as their match ends
     agent_cooldown = 0.05
     
-    soft_gap = max(100.0, rating_spread * RATING_GAP_SOFT_FACTOR)
-    hard_gap = max(200.0, rating_spread * RATING_GAP_HARD_FACTOR)
+    soft_gap = max(50.0, min(120.0, rating_spread * RATING_GAP_SOFT_FACTOR))
+    hard_gap = max(100.0, min(200.0, rating_spread * RATING_GAP_HARD_FACTOR))
     
     per_team_hourly_cap = 999999  # Dynamic load balancing handled by load_penalty
     matches_per_cycle = max(4, n_teams)
@@ -139,13 +140,16 @@ def create_match(conn, a, b):
 
 
 def _reap_stuck_jobs(conn):
-    """Clean up jobs and matches stuck in 'running' or 'pending' for > 3 minutes (e.g. worker crash)."""
+    """Clean up jobs and matches stuck in 'running' for > 5 minutes or 'pending' for > 15 minutes."""
     execute(conn,
         "UPDATE jobs SET status='failed', error='worker_timeout', finished_at=now() "
-        "WHERE status='running' AND started_at < now() - interval '3 minutes'")
+        "WHERE status='running' AND started_at < now() - interval '5 minutes'")
     execute(conn,
         "UPDATE matches SET status='errored', reason='worker_timeout', finished_at=now() "
-        "WHERE status IN ('pending','running') AND created_at < now() - interval '3 minutes'")
+        "WHERE status = 'running' AND created_at < now() - interval '10 minutes'")
+    execute(conn,
+        "UPDATE matches SET status='errored', reason='queue_timeout', finished_at=now() "
+        "WHERE status = 'pending' AND created_at < now() - interval '15 minutes'")
 
 
 def enqueue_matches(conn, limit=None):
@@ -164,7 +168,7 @@ def _enqueue_locked(conn, limit_override=None):
 
     # Queue Backpressure Control: Check how many pending match jobs are in queue
     pending_queue_count = _get_pending_match_count(conn)
-    max_allowed_pending = 8  # Keep queue tight so freshly submitted bots get immediate execution
+    max_allowed_pending = 50  # Higher cap prevents starvation when worker can't drain queue fast enough
     if pending_queue_count >= max_allowed_pending and limit_override is None:
         return 0
 
@@ -210,10 +214,10 @@ def _enqueue_locked(conn, limit_override=None):
     team_hour_counts = {r[0]: int(r[1]) for r in recent_rows}
     avg_hour_matches = (sum(team_hour_counts.values()) / max(1, len(team_hour_counts))) if team_hour_counts else 0.0
 
-    # Query last match time between pairs (in minutes ago)
+    # Query last match time between pairs (in minutes ago) across all matches
     pair_rows = query(conn,
-        "SELECT team_a_id, team_b_id, EXTRACT(EPOCH FROM (now() - MAX(finished_at))) / 60.0 "
-        "FROM matches WHERE status='finished' GROUP BY team_a_id, team_b_id", ())
+        "SELECT team_a_id, team_b_id, EXTRACT(EPOCH FROM (now() - MAX(created_at))) / 60.0 "
+        "FROM matches GROUP BY team_a_id, team_b_id", ())
     pair_last_played = {}
     for r in pair_rows:
         ta, tb, mins = r[0], r[1], float(r[2]) if r[2] is not None else 999999.0
@@ -240,15 +244,29 @@ def _enqueue_locked(conn, limit_override=None):
         ") t GROUP BY tid", ())
     team_last_match = {r[0]: float(r[1]) if r[1] is not None else 999999.0 for r in team_last_rows}
 
+    # Batch query: which submissions are busy (pending/running) or in agent cooldown?
+    # Single UNION replaces _has_pending_match + _in_cooldown per submission.
+    busy_rows = query(conn,
+        "SELECT DISTINCT submission_a_id AS sid FROM matches WHERE status IN ('pending','running') "
+        "UNION "
+        "SELECT DISTINCT submission_b_id FROM matches WHERE status IN ('pending','running') "
+        "UNION "
+        "SELECT DISTINCT submission_a_id FROM matches WHERE status='finished' "
+        "    AND finished_at > now() - (%s * interval '1 minute') "
+        "UNION "
+        "SELECT DISTINCT submission_b_id FROM matches WHERE status='finished' "
+        "    AND finished_at > now() - (%s * interval '1 minute')",
+        (float(agent_cooldown), float(agent_cooldown)))
+    busy_subs = {r[0] for r in busy_rows}
+
     # 1. Filter: remove submissions with pending/running matches or agent in cooldown.
     eligible = []
     for r in rows:
         tid, sid, actual_rating, played, rd = r[0], r[1], float(r[2]), int(r[3]), float(r[4])
-        if _has_pending_match(conn, sid):
+        if sid in busy_subs:
             continue
-        if _in_cooldown(conn, sid, agent_cooldown):
-            continue
-        effective_rating = team_highest_active_rating[tid]
+        # Use submission-specific rating, not team's highest (fixes climb barrier)
+        effective_rating = actual_rating
         eligible.append((tid, sid, effective_rating, played, rd))
 
     if not eligible:
@@ -268,7 +286,8 @@ def _enqueue_locked(conn, limit_override=None):
                 if tid_a == tid_b:
                     continue
 
-                if _recently_matched(conn, tid_a, tid_b, current_pair_cooldown):
+                mins_ago = pair_last_played.get((tid_a, tid_b), 999999.0)
+                if mins_ago < current_pair_cooldown:
                     continue
 
                 h_count_a = team_hour_counts.get(tid_a, 0)
@@ -280,29 +299,51 @@ def _enqueue_locked(conn, limit_override=None):
                 is_starved_b = (h_count_b == 0) or (mins_b > 2.0)
 
                 gap = abs(rating_a - rating_b)
-                if gap > current_hard_gap and not (is_starved_a or is_starved_b):
+
+                # Hard ceiling: No match is EVER created across a >250 Elo gap
+                if gap > 250.0:
                     continue
 
-                # Penalty & Diversity Cost calculation
-                norm_gap = gap / max(1.0, rating_spread)
+                # Dynamic Top-Tier Protection: Top teams (within 150 Elo of peak) only match within 220 Elo of peak
+                top_r_a = max(team_highest_active_rating.get(tid_a, rating_a), rating_a)
+                top_r_b = max(team_highest_active_rating.get(tid_b, rating_b), rating_b)
+                max_ladder_rating = max(ratings) if ratings else 600.0
+                top_tier_cutoff = max_ladder_rating - 150.0
+                top_tier_min_allowed = max_ladder_rating - 220.0
+
+                if max(top_r_a, top_r_b) >= top_tier_cutoff and min(top_r_a, top_r_b) < top_tier_min_allowed:
+                    continue
+
+                # Starved teams can bypass gap check, but only up to 1.2x hard_gap
+                if gap > current_hard_gap and not (is_starved_a or is_starved_b):
+                    continue
+                if gap > current_hard_gap * 1.2:
+                    continue
+
+                # 1. Quadratic Elo Distance Penalty (30 Elo gap = 1.0, 100 Elo = 11.1, 200 Elo = 44.4)
+                elo_penalty = (gap / 30.0) ** 2.0
+
+                # 2. Smooth Recency Decay over 15-minute horizon (forces opponent rotation)
                 mins_ago = pair_last_played.get((tid_a, tid_b), 999999.0)
-                recency = RECENCY_PENALTY_BASE * max(0.0, 1.0 - (mins_ago / max(0.1, float(current_pair_cooldown))))
+                recency_penalty = 30.0 / (max(0.05, mins_ago) + 0.4)
+
+                # 3. Opponent Diversity Penalty: heavily penalize repeated matchups
+                times_played = pair_match_counts.get((tid_a, tid_b), 0)
+                diversity_penalty = 12.0 * times_played
+
+                # 4. Load Balancing & Info Gain
                 overload = (max(0, h_count_a - avg_hour_matches) + max(0, h_count_b - avg_hour_matches))
                 load_penalty = LOAD_PENALTY_BASE * overload
-
-                # Opponent Diversity Bonus: Teams that have played each other fewer times get high priority
-                times_played = pair_match_counts.get((tid_a, tid_b), 0)
-                diversity_penalty = 2.0 * times_played
-
-                # Information Gain Bonus: uncalibrated bots (high RD) get matching priority
                 info_gain_bonus = 0.5 * ((rd_a + rd_b) / 700.0)
 
-                # Anti-Starvation Aging Boost: teams waiting >1.5m accumulate priority discount
+                # 5. Capped Starvation Aging Boost
                 starve_a = max(0.0, (mins_a - 1.5) / 0.5) if (h_count_a == 0 or mins_a > 1.5) else 0.0
                 starve_b = max(0.0, (mins_b - 1.5) / 0.5) if (h_count_b == 0 or mins_b > 1.5) else 0.0
-                starvation_boost = 20.0 * (starve_a + starve_b)
+                starve_a = min(starve_a, 2.5)
+                starve_b = min(starve_b, 2.5)
+                starvation_boost = 2.0 * (starve_a + starve_b)
 
-                cost = norm_gap + recency + load_penalty + diversity_penalty - info_gain_bonus - starvation_boost
+                cost = elo_penalty + recency_penalty + load_penalty + diversity_penalty - info_gain_bonus - starvation_boost
                 candidates.append((cost, i, j))
 
         candidates.sort(key=lambda x: x[0])
@@ -319,12 +360,47 @@ def _enqueue_locked(conn, limit_override=None):
             used_teams.update({tid_a, tid_b})
             created += 1
 
+    # Pass 0: Guarantee matches for unrated/new players (matches_played==0 or rd>=300)
+    # Sorts by highest RD (most uncertain) first for fastest convergence.
+    uncal_sorted = sorted(
+        [(eligible[i][4], i) for i in range(len(eligible))
+         if eligible[i][3] == 0 or eligible[i][4] >= 300.0],
+        reverse=True)
+    for u in range(len(uncal_sorted)):
+        if created >= limit:
+            break
+        _, idx_a = uncal_sorted[u]
+        tid_a, sid_a, ra, _, _ = eligible[idx_a]
+        if sid_a in used_subs or tid_a in used_teams:
+            continue
+        for v in range(u + 1, len(uncal_sorted)):
+            _, idx_b = uncal_sorted[v]
+            tid_b, sid_b, rb, _, _ = eligible[idx_b]
+            if sid_b in used_subs or tid_b in used_teams or tid_b == tid_a:
+                continue
+            # Enforce top-tier protection and 250 Elo gap cap even for uncalibrated players
+            top_r_a = max(team_highest_active_rating.get(tid_a, ra), ra)
+            top_r_b = max(team_highest_active_rating.get(tid_b, rb), rb)
+            max_ladder_rating = max(ratings) if ratings else 600.0
+            if max(top_r_a, top_r_b) >= (max_ladder_rating - 150.0) and min(top_r_a, top_r_b) < (max_ladder_rating - 220.0):
+                continue
+            if abs(ra - rb) > 250.0:
+                continue
+            _pc = pair_last_played.get((tid_a, tid_b), 999999.0)
+            if _pc < 0.5:
+                continue
+            create_match(conn, (tid_a, sid_a), (tid_b, sid_b))
+            used_subs.update({sid_a, sid_b})
+            used_teams.update({tid_a, tid_b})
+            created += 1
+            break
+
     # Pass 1: Standard matching with dynamic parameters
     find_and_create_pairs(hard_gap, pair_cooldown)
 
     # Pass 1b: Fallback relaxation if no matches were created
     if created == 0 and len(unique_teams) >= 2:
-        find_and_create_pairs(hard_gap * 3.0, max(0.1, pair_cooldown * 0.15))
+        find_and_create_pairs(hard_gap * 1.2, max(0.1, pair_cooldown * 0.15))
 
     # Pass 2: Fallback self-pairing for teams with multiple active submissions if no opponent team available
     if created < limit and len(unique_teams) < 2:
@@ -338,7 +414,8 @@ def _enqueue_locked(conn, limit_override=None):
                 tid_b, sid_b, rating_b, played_b, rd_b = eligible[j]
                 if sid_b in used_subs or sid_a == sid_b:
                     continue
-                if _recently_matched(conn, tid_a, tid_b, pair_cooldown):
+                _rm_mins = pair_last_played.get((tid_a, tid_b), 999999.0)
+                if _rm_mins < pair_cooldown:
                     continue
                 create_match(conn, (tid_a, sid_a), (tid_b, sid_b))
                 used_subs.update({sid_a, sid_b})

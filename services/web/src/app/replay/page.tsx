@@ -23,6 +23,7 @@ import { ReplayRenderer } from "@/components/replay/ReplayRenderer";
 import { useSession } from "@/lib/auth-client";
 import { clientCache } from "@/lib/client-cache";
 import { animate } from "animejs";
+import { formatRelativeTime, useTick } from "@/lib/time";
 
 interface MatchItem {
   id: string;
@@ -38,7 +39,7 @@ interface MatchItem {
   winnerName: string | null;
   scores: number[];
   createdAt: string;
-  relativeTime: string;
+  finishedAt: string | null;
   submissionAId?: string;
   submissionBId?: string;
 }
@@ -95,6 +96,9 @@ function GameHistoryContent() {
   const [canvasDim, setCanvasDim] = useState(580);
   const canvasContainerRef = useRef<HTMLDivElement>(null);
 
+  // Re-render every second to keep relative time labels fresh
+  useTick(1000);
+
   // Telemetry Controls
   const [showFleetNum, setShowFleetNum] = useState(true);
   const [showProduction, setShowProduction] = useState(true);
@@ -126,8 +130,28 @@ function GameHistoryContent() {
     return () => observer.disconnect();
   }, []);
 
-  // Fetch Game History Match List
+  // Fetch Game History Match List (with client cache for 15s)
   useEffect(() => {
+    const cacheKey = teamId || submissionId || "all";
+    const cached = clientCache.getMatchList(cacheKey);
+    if (cached && cached.length > 0) {
+      Promise.resolve().then(() => {
+        setMatchList(cached);
+        if (cached.length > 0) {
+          let targetMatch = cached[0];
+          if (submissionId) {
+            const found = cached.find((m) => m.submissionAId === submissionId || m.submissionBId === submissionId);
+            if (found) targetMatch = found;
+          }
+          setSelectedMatch(targetMatch);
+        } else {
+          setSelectedMatch(null);
+        }
+        setLoadingMatches(false);
+      });
+      return;
+    }
+
     let url = "/api/replays";
     const queryParts: string[] = [];
     if (teamId) queryParts.push(`teamId=${encodeURIComponent(teamId)}`);
@@ -140,6 +164,7 @@ function GameHistoryContent() {
         return res.json();
       })
       .then((data: MatchItem[]) => {
+        clientCache.setMatchList(cacheKey, data);
         setMatchList(data);
         if (data.length > 0) {
           let targetMatch = data[0];
@@ -159,7 +184,7 @@ function GameHistoryContent() {
       .finally(() => {
         setLoadingMatches(false);
       });
-  }, [teamId, submissionId, teamNameParam]);
+  }, [teamId, submissionId]);
 
   // Fetch Replay Data when selectedMatch changes (with client memory cache for 0ms loads)
   useEffect(() => {
@@ -499,12 +524,10 @@ function GameHistoryContent() {
                       </div>
                     </div>
 
-                    {/* Relative time */}
-                    {m.relativeTime && (
-                      <div className="text-[10px] text-muted-foreground/70 mt-1 font-mono">
-                        {m.relativeTime}
-                      </div>
-                    )}
+                    {/* Relative time (computed client-side for live updates) */}
+                    <div className="text-[10px] text-muted-foreground/70 mt-1 font-mono">
+                      {formatRelativeTime(m.finishedAt || m.createdAt)}
+                    </div>
                   </div>
 
                   <button

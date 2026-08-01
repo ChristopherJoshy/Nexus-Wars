@@ -30,20 +30,20 @@ from config import (SUBMISSIONS_DIR, ENGINE_DIR, ENGINE_VERSION,
 from db import get_conn, execute, execute_returning, query
 from storage import put_json, get_file
 import run_match as rm
+from rating.glicko2 import rate_match
 
-def rate_elo(r_self, matches_self, r_opp, score):
-    # Tie +0 Rule
-    if score == 0.5:
-        return r_self
-    
-    # Dynamic K-factor
-    k_self = 64.0 if matches_self < 15 else 24.0
-    
-    # Expected score
-    e_self = 1.0 / (1.0 + 10.0 ** ((r_opp - r_self) / 400.0))
-    
-    # Calculate new rating (cannot go below 0)
-    return max(0.0, r_self + k_self * (score - e_self))
+
+def _apply_asymmetric_penalty(r_before, r_after_glicko2, avg_rating=750.0, spread=400.0):
+    """High-ranked players lose more on losses, gain less on wins.
+    Low-ranked players gain more on wins, lose less on losses.
+    Applied on top of Glicko-2's RD-based swing."""
+    delta = r_after_glicko2 - r_before
+    relative = (r_before - avg_rating) / max(1.0, spread)
+    if delta > 0:
+        mult = 1.0 - 0.25 * relative
+    else:
+        mult = 1.0 + 0.25 * relative
+    return max(100.0, r_before + delta * mult)
 
 
 def engine_config():
@@ -231,25 +231,27 @@ def update_ratings(conn, team_a, team_b, winner, match_id, sub_a, sub_b):
 
     ra = load_team(team_a)
     rb = load_team(team_b)
+    dt_a = 0.0 if ra[3] is None else (now - ra[3]).total_seconds() / 86400.0
+    dt_b = 0.0 if rb[3] is None else (now - rb[3]).total_seconds() / 86400.0
 
     score_a = 1.0 if winner == 0 else (0.0 if winner == 1 else 0.5)
-    score_b = 1.0 if winner == 1 else (0.0 if winner == 0 else 0.5)
-
-    na_r = rate_elo(ra[0], ra[4], rb[0], score_a)
-    nb_r = rate_elo(rb[0], rb[4], ra[0], score_b)
+    (na_r, na_rd, na_vol), (nb_r, nb_rd, nb_vol) = rate_match(
+        ra[0], ra[1], ra[2], dt_a, rb[0], rb[1], rb[2], dt_b, score_a)
+    na_r = _apply_asymmetric_penalty(ra[0], na_r)
+    nb_r = _apply_asymmetric_penalty(rb[0], nb_r)
 
     execute(conn,
             "UPDATE ratings SET rating=%s, rd=%s, volatility=%s, last_match_at=%s, "
             "matches_played=matches_played+1, wins=wins+%s, losses=losses+%s, "
             "draws=draws+%s WHERE team_id=%s",
-            (na_r, ra[1], ra[2], now,
+            (na_r, na_rd, na_vol, now,
              1 if winner == 0 else 0, 1 if winner == 1 else 0,
              1 if is_draw else 0, team_a))
     execute(conn,
             "UPDATE ratings SET rating=%s, rd=%s, volatility=%s, last_match_at=%s, "
             "matches_played=matches_played+1, wins=wins+%s, losses=losses+%s, "
             "draws=draws+%s WHERE team_id=%s",
-            (nb_r, rb[1], rb[2], now,
+            (nb_r, nb_rd, nb_vol, now,
              1 if winner == 1 else 0, 1 if winner == 0 else 0,
              1 if is_draw else 0, team_b))
 
@@ -283,15 +285,20 @@ def update_ratings(conn, team_a, team_b, winner, match_id, sub_a, sub_b):
     if not sb:
         sb = ensure_sub(sub_b, team_b)
 
-    nsa_r = rate_elo(sa[0], sa[4], sb[0], score_a)
-    nsb_r = rate_elo(sb[0], sb[4], sa[0], score_b)
+    dt_sa = 0.0 if sa[3] is None else (now - sa[3]).total_seconds() / 86400.0
+    dt_sb = 0.0 if sb[3] is None else (now - sb[3]).total_seconds() / 86400.0
+
+    (nsa_r, nsa_rd, nsa_vol), (nsb_r, nsb_rd, nsb_vol) = rate_match(
+        sa[0], sa[1], sa[2], dt_sa, sb[0], sb[1], sb[2], dt_sb, score_a)
+    nsa_r = _apply_asymmetric_penalty(sa[0], nsa_r)
+    nsb_r = _apply_asymmetric_penalty(sb[0], nsb_r)
 
     execute(conn,
             "UPDATE submission_ratings SET rating=%s, rd=%s, volatility=%s, "
             "last_match_at=%s, matches_played=matches_played+1, "
             "wins=wins+%s, losses=losses+%s, draws=draws+%s "
             "WHERE submission_id=%s",
-            (nsa_r, sa[1], sa[2], now,
+            (nsa_r, nsa_rd, nsa_vol, now,
              1 if winner == 0 else 0, 1 if winner == 1 else 0,
              1 if is_draw else 0, sub_a))
     execute(conn,
@@ -299,13 +306,13 @@ def update_ratings(conn, team_a, team_b, winner, match_id, sub_a, sub_b):
             "last_match_at=%s, matches_played=matches_played+1, "
             "wins=wins+%s, losses=losses+%s, draws=draws+%s "
             "WHERE submission_id=%s",
-            (nsb_r, sb[1], sb[2], now,
+            (nsb_r, nsb_rd, nsb_vol, now,
              1 if winner == 1 else 0, 1 if winner == 0 else 0,
              1 if is_draw else 0, sub_b))
 
     for idx, (tid, sub, r_before, r_after, rd_after) in enumerate([
-        (team_a, sub_a, ra[0], na_r, ra[1]),
-        (team_b, sub_b, rb[0], nb_r, rb[1]),
+        (team_a, sub_a, ra[0], na_r, na_rd),
+        (team_b, sub_b, rb[0], nb_r, nb_rd),
     ]):
         execute(conn,
                 "INSERT INTO match_participants(match_id, team_id, player_index, "
