@@ -304,8 +304,8 @@ def update_ratings(conn, team_a, team_b, winner, match_id, sub_a, sub_b):
              1 if is_draw else 0, sub_b))
 
     for idx, (tid, sub, r_before, r_after, rd_after) in enumerate([
-        (team_a, sub_a, ra[0], na_r, na_rd),
-        (team_b, sub_b, rb[0], nb_r, nb_rd),
+        (team_a, sub_a, ra[0], na_r, ra[1]),
+        (team_b, sub_b, rb[0], nb_r, rb[1]),
     ]):
         execute(conn,
                 "INSERT INTO match_participants(match_id, team_id, player_index, "
