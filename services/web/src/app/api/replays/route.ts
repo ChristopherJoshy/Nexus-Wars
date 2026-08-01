@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { matches, teams, matchParticipants, submissions } from "@/lib/db/schema";
+import { matches, teams, users, matchParticipants, submissions } from "@/lib/db/schema";
 import { eq, or, and, desc, inArray } from "drizzle-orm";
 
 export async function GET(req: NextRequest) {
@@ -47,8 +47,16 @@ export async function GET(req: NextRequest) {
       .orderBy(desc(matches.finishedAt), desc(matches.createdAt))
       .limit(500);
 
-    const allTeams = await db.select({ id: teams.id, name: teams.name }).from(teams);
-    const teamMap = new Map(allTeams.map((t) => [t.id, t.name]));
+    const allTeams = await db
+      .select({
+        id: teams.id,
+        name: teams.name,
+        image: users.image,
+      })
+      .from(teams)
+      .leftJoin(users, eq(teams.ownerId, users.id));
+
+    const teamMap = new Map(allTeams.map((t) => [t.id, { name: t.name, image: t.image }]));
 
     const matchIds = recentMatches.map((m) => m.id);
     const allParticipants = matchIds.length > 0
@@ -71,8 +79,13 @@ export async function GET(req: NextRequest) {
     }
 
     const formattedMatches = recentMatches.map((m) => {
-      const teamAName = (m.teamAId && teamMap.get(m.teamAId)) || "Team Alpha";
-      const teamBName = (m.teamBId && teamMap.get(m.teamBId)) || "Team Beta";
+      const teamAData = m.teamAId ? teamMap.get(m.teamAId) : null;
+      const teamBData = m.teamBId ? teamMap.get(m.teamBId) : null;
+
+      const teamAName = teamAData?.name || "Team Alpha";
+      const teamBName = teamBData?.name || "Team Beta";
+      const teamAImage = teamAData?.image || null;
+      const teamBImage = teamBData?.image || null;
 
       const aRating = m.teamAId ? ratingMap.get(`${m.id}:${m.teamAId}`) : null;
       const bRating = m.teamBId ? ratingMap.get(`${m.id}:${m.teamBId}`) : null;
@@ -106,6 +119,8 @@ export async function GET(req: NextRequest) {
         kind: m.kind,
         teamA: teamAName,
         teamB: teamBName,
+        teamAImage,
+        teamBImage,
         teamARating: aRating?.rating ?? 600,
         teamBRating: bRating?.rating ?? 600,
         teamAChange: aChange,

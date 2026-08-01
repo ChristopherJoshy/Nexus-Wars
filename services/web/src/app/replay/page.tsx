@@ -32,6 +32,8 @@ interface MatchItem {
   kind: string;
   teamA: string;
   teamB: string;
+  teamAImage?: string | null;
+  teamBImage?: string | null;
   teamARating: number;
   teamBRating: number;
   teamAChange?: number;
@@ -524,9 +526,17 @@ function GameHistoryContent() {
                     {/* Team A (Blue) */}
                     <div className="flex items-center justify-between text-xs">
                       <div className="flex items-center gap-2 truncate max-w-[170px]">
-                        <div className="w-6 h-6 rounded-full bg-blue-500/15 border border-blue-500/35 flex items-center justify-center shrink-0 text-blue-600">
-                          <Bot className="w-3.5 h-3.5" />
-                        </div>
+                        {m.teamAImage ? (
+                          <img
+                            src={m.teamAImage}
+                            alt={m.teamA}
+                            className="w-6 h-6 rounded-full object-cover shrink-0 border border-blue-500/40"
+                          />
+                        ) : (
+                          <div className="w-6 h-6 rounded-full bg-blue-500/15 border border-blue-500/35 flex items-center justify-center shrink-0 text-blue-600">
+                            <Bot className="w-3.5 h-3.5" />
+                          </div>
+                        )}
                         <span className={`truncate font-semibold text-xs ${m.winner === "a" ? "text-foreground" : "text-muted-foreground"}`}>
                           {m.teamA}
                         </span>
@@ -545,9 +555,17 @@ function GameHistoryContent() {
                     {/* Team B (Orange) */}
                     <div className="flex items-center justify-between text-xs">
                       <div className="flex items-center gap-2 truncate max-w-[170px]">
-                        <div className="w-6 h-6 rounded-full bg-orange-500/15 border border-orange-500/35 flex items-center justify-center shrink-0 text-orange-600">
-                          <Bot className="w-3.5 h-3.5" />
-                        </div>
+                        {m.teamBImage ? (
+                          <img
+                            src={m.teamBImage}
+                            alt={m.teamB}
+                            className="w-6 h-6 rounded-full object-cover shrink-0 border border-orange-500/40"
+                          />
+                        ) : (
+                          <div className="w-6 h-6 rounded-full bg-orange-500/15 border border-orange-500/35 flex items-center justify-center shrink-0 text-orange-600">
+                            <Bot className="w-3.5 h-3.5" />
+                          </div>
+                        )}
                         <span className={`truncate font-semibold text-xs ${m.winner === "b" ? "text-foreground" : "text-muted-foreground"}`}>
                           {m.teamB}
                         </span>
