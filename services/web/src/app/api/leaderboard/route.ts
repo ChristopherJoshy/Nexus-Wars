@@ -27,6 +27,8 @@ export async function GET() {
         bestSubmissionId: submissionRatings.submissionId,
       })
       .from(submissionRatings)
+      .innerJoin(submissions, eq(submissionRatings.submissionId, submissions.id))
+      .where(eq(submissions.status, "active"))
       .orderBy(submissionRatings.teamId, desc(submissionRatings.rating));
 
     const bestByTeam = new Map<string, typeof topSubs[0]>();

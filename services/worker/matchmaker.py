@@ -151,7 +151,15 @@ def _enqueue_locked(conn, limit_override=None):
     unique_teams = {r[0] for r in rows}
     n_teams = len(unique_teams)
 
-    ratings = [float(r[2]) for r in rows]
+    # Compute the highest active ELO per team for matchmaking
+    team_highest_active_rating = {}
+    for r in rows:
+        tid = r[0]
+        rating = float(r[2])
+        if tid not in team_highest_active_rating or rating > team_highest_active_rating[tid]:
+            team_highest_active_rating[tid] = rating
+
+    ratings = list(team_highest_active_rating.values())
     rating_spread = (max(ratings) - min(ratings)) if ratings else 0.0
 
     (pair_cooldown, agent_cooldown, soft_gap, hard_gap,
@@ -192,12 +200,14 @@ def _enqueue_locked(conn, limit_override=None):
     # 1. Filter: remove submissions with pending/running matches or agent in cooldown.
     eligible = []
     for r in rows:
-        tid, sid, rating, played, rd = r[0], r[1], float(r[2]), int(r[3]), float(r[4])
+        tid, sid, actual_rating, played, rd = r[0], r[1], float(r[2]), int(r[3]), float(r[4])
         if _has_pending_match(conn, sid):
             continue
         if _in_cooldown(conn, sid, agent_cooldown):
             continue
-        eligible.append((tid, sid, rating, played, rd))
+        # Use the highest active ELO of the team to prevent smurfing with new bots
+        effective_rating = team_highest_active_rating[tid]
+        eligible.append((tid, sid, effective_rating, played, rd))
 
     if not eligible:
         return 0
