@@ -544,9 +544,22 @@ function GameHistoryContent() {
                           <Trophy className="w-3.5 h-3.5 text-amber-600 shrink-0" />
                         )}
                       </div>
-                      <span className="text-[10px] text-muted-foreground/70 font-mono">
-                        {m.teamARating ? Math.round(m.teamARating) : 600}
-                      </span>
+                      <div className="flex items-center gap-1 font-mono text-[11px] shrink-0">
+                        <span className="font-bold text-foreground">
+                          {m.teamARating ? Math.round(m.teamARating) : 600}
+                        </span>
+                        {m.teamAChange != null && (
+                          <span className={`text-[10px] font-semibold ${
+                            m.teamAChange > 0
+                              ? "text-emerald-600 dark:text-emerald-400"
+                              : m.teamAChange < 0
+                              ? "text-red-500 dark:text-red-400"
+                              : "text-muted-foreground"
+                          }`}>
+                            ({m.teamAChange > 0 ? `+${m.teamAChange}` : m.teamAChange})
+                          </span>
+                        )}
+                      </div>
                     </div>
 
                     {/* Horizontal Inner Divider */}
@@ -573,9 +586,22 @@ function GameHistoryContent() {
                           <Trophy className="w-3.5 h-3.5 text-amber-600 shrink-0" />
                         )}
                       </div>
-                      <span className="text-[10px] text-muted-foreground/70 font-mono">
-                        {m.teamBRating ? Math.round(m.teamBRating) : 600}
-                      </span>
+                      <div className="flex items-center gap-1 font-mono text-[11px] shrink-0">
+                        <span className="font-bold text-foreground">
+                          {m.teamBRating ? Math.round(m.teamBRating) : 600}
+                        </span>
+                        {m.teamBChange != null && (
+                          <span className={`text-[10px] font-semibold ${
+                            m.teamBChange > 0
+                              ? "text-emerald-600 dark:text-emerald-400"
+                              : m.teamBChange < 0
+                              ? "text-red-500 dark:text-red-400"
+                              : "text-muted-foreground"
+                          }`}>
+                            ({m.teamBChange > 0 ? `+${m.teamBChange}` : m.teamBChange})
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>

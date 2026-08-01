@@ -67,15 +67,16 @@ export async function GET(req: NextRequest) {
       : [];
     const ratingMap = new Map<string, { rating: number; rd: number; change: number | null }>();
     for (const p of allParticipants) {
-      const key = `${p.matchId}:${p.teamId}`;
       const change = p.ratingAfter != null && p.ratingBefore != null
         ? Math.round(p.ratingAfter - p.ratingBefore)
         : null;
-      ratingMap.set(key, {
+      const data = {
         rating: p.ratingAfter ?? p.ratingBefore ?? 600,
         rd: p.rdAfter ?? p.rdBefore ?? 350,
         change,
-      });
+      };
+      if (p.teamId) ratingMap.set(`${p.matchId}:${p.teamId}`, data);
+      if (p.submissionId) ratingMap.set(`${p.matchId}:${p.submissionId}`, data);
     }
 
     const formattedMatches = recentMatches.map((m) => {
@@ -87,8 +88,10 @@ export async function GET(req: NextRequest) {
       const teamAImage = teamAData?.image || null;
       const teamBImage = teamBData?.image || null;
 
-      const aRating = m.teamAId ? ratingMap.get(`${m.id}:${m.teamAId}`) : null;
-      const bRating = m.teamBId ? ratingMap.get(`${m.id}:${m.teamBId}`) : null;
+      const aRating = (m.submissionAId && ratingMap.get(`${m.id}:${m.submissionAId}`)) ||
+                      (m.teamAId && ratingMap.get(`${m.id}:${m.teamAId}`)) || null;
+      const bRating = (m.submissionBId && ratingMap.get(`${m.id}:${m.submissionBId}`)) ||
+                      (m.teamBId && ratingMap.get(`${m.id}:${m.teamBId}`)) || null;
 
       let aChange = aRating?.change ?? null;
       let bChange = bRating?.change ?? null;
