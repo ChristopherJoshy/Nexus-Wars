@@ -22,6 +22,7 @@ import subprocess
 import sys
 import threading
 import time
+import queue
 from types import SimpleNamespace
 
 from nexus_wars import interpreter, Planet, Fleet, BOARD_SIZE, CENTER, SUN_RADIUS
@@ -98,12 +99,7 @@ class InProcessRunner:
 
 
 class SubprocessRunner:
-    """Runs an external bot over a newline-delimited JSON line protocol.
-
-    Protocol per turn:
-      harness -> bot:  one JSON object (the observation) + "\\n"
-      bot     -> harness: one JSON array (the action) + "\\n"
-
+    """Spawns an external bot process, talking JSON over stdin/stdout.
     If the bot exceeds `act_timeout` (seconds) for a turn, it is killed and
     subsequent turns return an empty (invalid) action. With `sandbox_cmd` set,
     the bot is launched under nsjail (zero network, time/mem limits).
@@ -112,16 +108,37 @@ class SubprocessRunner:
     def __init__(self, command, act_timeout=0.15, sandbox_cmd=None):
         self.act_timeout = act_timeout
         self.dead = False
+        self.consecutive_timeouts = 0
         launch = list(sandbox_cmd) if sandbox_cmd else []
         launch += list(command)
         self.proc = subprocess.Popen(
             launch,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
             text=True,
             bufsize=1,
         )
+        def _log_stderr():
+            try:
+                for line in self.proc.stderr:
+                    sys.stdout.write(f"BOT STDERR: {line}")
+                    sys.stdout.flush()
+            except Exception:
+                pass
+        t = threading.Thread(target=_log_stderr, daemon=True)
+        t.start()
+
+        self.q = queue.Queue()
+        def _reader_loop():
+            try:
+                for line in iter(self.proc.stdout.readline, ''):
+                    self.q.put(line)
+            except Exception:
+                pass
+            self.q.put(None)
+        self.reader_thread = threading.Thread(target=_reader_loop, daemon=True)
+        self.reader_thread.start()
 
     def act(self, obs_dict):
         if self.dead:
@@ -129,49 +146,55 @@ class SubprocessRunner:
         try:
             self.proc.stdin.write(json.dumps(obs_dict) + "\n")
             self.proc.stdin.flush()
-        except (BrokenPipeError, ValueError):
+        except (BrokenPipeError, ValueError) as e:
+            sys.stdout.write(f"BOT BROKEN PIPE: {e}\n")
+            sys.stdout.flush()
             self.dead = True
             return []
 
+        timeout = 15.0 if getattr(self, 'is_first_turn', True) else self.act_timeout
+        self.is_first_turn = False
+        
         start_time = time.time()
-        while time.time() - start_time < self.act_timeout:
-            remaining = self.act_timeout - (time.time() - start_time)
+        while time.time() - start_time < timeout:
+            remaining = timeout - (time.time() - start_time)
             if remaining <= 0:
                 break
-            line = self._readline(remaining)
+            
+            try:
+                line = self.q.get(timeout=remaining)
+            except queue.Empty:
+                continue
+
             if line is None or not line:
+                sys.stdout.write(f"BOT TIMEOUT OR EOF: line={line!r}\n")
+                sys.stdout.flush()
                 self._kill()
                 return []
+                
             line_str = line.strip()
             if not line_str:
                 continue
+                
             try:
                 action = json.loads(line_str)
                 if isinstance(action, dict):
                     action = action.get("action", [])
                 if isinstance(action, list):
+                    self.consecutive_timeouts = 0
                     return action
             except json.JSONDecodeError:
-                # Skip non-JSON debug/print logs from stdout
                 continue
 
-        self._kill()
+        # Timed out this turn
+        self.consecutive_timeouts += 1
+        sys.stdout.write(f"BOT TURN TIMEOUT: {self.consecutive_timeouts}/10\n")
+        sys.stdout.flush()
+        if self.consecutive_timeouts >= 10:
+            sys.stdout.write(f"BOT KILLED (10 consecutive timeouts)\n")
+            sys.stdout.flush()
+            self._kill()
         return []
-
-    def _readline(self, timeout):
-        result = [None]
-        def reader():
-            try:
-                result[0] = self.proc.stdout.readline()
-            except Exception:
-                result[0] = None
-        thread = threading.Thread(target=reader)
-        thread.daemon = True
-        thread.start()
-        thread.join(timeout=timeout)
-        if thread.is_alive():
-            return None
-        return result[0] if result[0] is not None else ""
 
     def _kill(self):
         self.dead = True

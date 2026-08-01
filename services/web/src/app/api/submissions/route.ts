@@ -15,11 +15,7 @@ function getTodayStartUTC(): Date {
   return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0));
 }
 
-async function isUnlimitedTeamCheck(teamId: string, teamName?: string): Promise<boolean> {
-  if (!teamName || teamName.toLowerCase().trim() !== "nexus official") {
-    return false;
-  }
-
+async function isUnlimitedTeamCheck(teamId: string): Promise<boolean> {
   const team = await db.query.teams.findFirst({
     where: eq(teams.id, teamId),
   });
@@ -67,7 +63,7 @@ export async function POST(req: NextRequest) {
     where: eq(teams.id, membership.teamId),
   });
 
-  const isUnlimitedTeam = await isUnlimitedTeamCheck(membership.teamId, team?.name);
+  const isUnlimitedTeam = await isUnlimitedTeamCheck(membership.teamId);
   const effectiveMaxSubmissions = isUnlimitedTeam ? 999999 : MAX_SUBMISSIONS_PER_DAY;
 
   const pausedRow = await db.query.settings.findFirst({
@@ -183,7 +179,7 @@ export async function GET(req: NextRequest) {
     where: eq(teams.id, membership.teamId),
   });
 
-  const isUnlimitedTeam = await isUnlimitedTeamCheck(membership.teamId, team?.name);
+  const isUnlimitedTeam = await isUnlimitedTeamCheck(membership.teamId);
   const effectiveMaxSubmissions = isUnlimitedTeam ? 999999 : MAX_SUBMISSIONS_PER_DAY;
 
   const subs = await db.query.submissions.findMany({

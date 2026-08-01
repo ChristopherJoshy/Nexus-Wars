@@ -371,7 +371,11 @@ export default function SubmissionsPage() {
       <div className="flex items-center gap-2 text-[11px] text-muted-foreground bg-muted border border-border rounded-lg px-4 py-2">
         <Zap className="w-3.5 h-3.5 text-amber-700 shrink-0" />
         <span>
-          Maximum <strong className="text-foreground">{maxSubmissions >= 999999 ? "Unlimited" : `${maxSubmissions} submissions`}</strong> per team per day.
+          {maxSubmissions >= 999999 ? (
+            <><strong className="text-foreground">Unlimited submissions</strong> per team per day. </>
+          ) : (
+            <>Maximum <strong className="text-foreground">{maxSubmissions} submissions</strong> per team per day. </>
+          )}
           Only the latest <strong className="text-foreground">2 active</strong> submissions compete in matchmaking.
           Older submissions are archived but visible below.
         </span>

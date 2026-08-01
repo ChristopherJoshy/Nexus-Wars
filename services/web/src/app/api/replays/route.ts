@@ -40,10 +40,10 @@ export async function GET(req: NextRequest) {
 
     const baseWhere = eq(matches.status, "finished");
 
-    const teamOrSubmissionWhere = effectiveTeamId
-      ? or(eq(matches.teamAId, effectiveTeamId), eq(matches.teamBId, effectiveTeamId))
-      : submissionId
-        ? or(eq(matches.submissionAId, submissionId), eq(matches.submissionBId, submissionId))
+    const teamOrSubmissionWhere = submissionId
+      ? or(eq(matches.submissionAId, submissionId), eq(matches.submissionBId, submissionId))
+      : effectiveTeamId
+        ? or(eq(matches.teamAId, effectiveTeamId), eq(matches.teamBId, effectiveTeamId))
         : undefined;
 
     const whereClause = teamOrSubmissionWhere
