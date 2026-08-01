@@ -30,6 +30,8 @@ interface MatchItem {
   teamB: string;
   teamARating: number;
   teamBRating: number;
+  teamAChange?: number;
+  teamBChange?: number;
   winner: "a" | "b" | "draw";
   winnerName: string | null;
   scores: number[];
@@ -479,7 +481,7 @@ export default function MatchReplayPage({
         )}
 
         {/* Center Space Canvas Visualizer */}
-        <div ref={canvasContainerRef} className="flex-1 flex items-center justify-center p-5 sm:p-8 bg-background min-w-0 h-full">
+        <div ref={canvasContainerRef} className="flex-1 flex items-center justify-center p-5 sm:p-8 bg-background min-w-0 h-full relative">
           {currentStep ? (
             <ReplayRenderer
               step={currentStep}
@@ -498,6 +500,50 @@ export default function MatchReplayPage({
               </span>
             </div>
           )}
+
+          {/* Elden Ring Inspired Game Over Banner Overlay */}
+          {selectedMatch && step >= maxStep && maxStep > 0 && (() => {
+            const winner = selectedMatch.winner;
+            const isDraw = winner === "draw" || !winner;
+            const isWinA = winner === "a";
+
+            const winnerName = isDraw ? null : isWinA ? selectedMatch.teamA : selectedMatch.teamB;
+            const winnerChange = isDraw ? 0 : isWinA ? (selectedMatch.teamAChange ?? 15) : (selectedMatch.teamBChange ?? 15);
+            const loserName = isDraw ? null : isWinA ? selectedMatch.teamB : selectedMatch.teamA;
+            const loserChange = isDraw ? 0 : isWinA ? (selectedMatch.teamBChange ?? -15) : (selectedMatch.teamAChange ?? -15);
+
+            const winnerScore = isDraw ? 0 : isWinA ? (selectedMatch.scores?.[0] ?? 0) : (selectedMatch.scores?.[1] ?? 0);
+            const loserScore = isDraw ? 0 : isWinA ? (selectedMatch.scores?.[1] ?? 0) : (selectedMatch.scores?.[0] ?? 0);
+
+            const winChangeStr = winnerChange > 0 ? `+${winnerChange}` : `${winnerChange}`;
+            const loseChangeStr = loserChange > 0 ? `+${loserChange}` : `${loserChange}`;
+
+            return (
+              <div className="absolute inset-x-0 z-30 pointer-events-none flex items-center justify-center px-2">
+                <div className="w-full bg-gradient-to-r from-black/0 via-black/92 to-black/0 py-6 sm:py-8 border-y border-red-900/60 backdrop-blur-xs flex flex-col items-center justify-center text-center shadow-2xl transition-all duration-700 animate-in fade-in zoom-in-95">
+                  <h2 className="font-serif text-3xl sm:text-5xl font-extrabold uppercase tracking-[0.35em] text-[#b91c1c] drop-shadow-[0_4px_20px_rgba(185,28,28,0.85)] select-none">
+                    GAME OVER
+                  </h2>
+                  {isDraw ? (
+                    <div className="font-serif tracking-widest text-xs sm:text-sm text-amber-200/90 mt-2">
+                      Match ended in a draw!
+                    </div>
+                  ) : (
+                    <div className="font-serif tracking-widest text-xs sm:text-sm text-amber-200/90 mt-2">
+                      [1st] {winnerName} ({winChangeStr}) wins!
+                    </div>
+                  )}
+                  <div className="font-mono text-[10px] sm:text-xs text-stone-400/80 mt-1 tracking-wider">
+                    {isDraw ? (
+                      `[1st] ${selectedMatch.teamA} (0) — [1st] ${selectedMatch.teamB} (0)`
+                    ) : (
+                      `[1st] ${winnerName} (${winChangeStr}): ${winnerScore} — [2nd] ${loserName} (${loseChangeStr}): ${loserScore}`
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
         </div>
 
         {/* Bottom Playback Controls Bar */}
