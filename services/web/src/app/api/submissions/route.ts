@@ -8,42 +8,10 @@ import { randomUUID } from "crypto";
 import { parsePausedValue } from "@/app/api/admin/route";
 
 const MAX_SUBMISSIONS_PER_DAY = 5;
-const UNLIMITED_LEADER_EMAIL = "christopherjoshy4@gmail.com";
 
 function getTodayStartUTC(): Date {
   const now = new Date();
   return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0));
-}
-
-async function isUnlimitedTeamCheck(teamId: string): Promise<boolean> {
-  const team = await db.query.teams.findFirst({
-    where: eq(teams.id, teamId),
-  });
-  if (!team) return false;
-
-  let leaderEmail: string | undefined;
-
-  if (team.ownerId) {
-    const ownerUser = await db.query.users.findFirst({
-      where: eq(users.id, team.ownerId),
-    });
-    leaderEmail = ownerUser?.email;
-  }
-
-  if (!leaderEmail) {
-    const ownerMember = await db
-      .select({ email: users.email })
-      .from(teamMembers)
-      .innerJoin(users, eq(teamMembers.userId, users.id))
-      .where(and(eq(teamMembers.teamId, teamId), eq(teamMembers.role, "owner")))
-      .limit(1);
-
-    if (ownerMember.length > 0) {
-      leaderEmail = ownerMember[0].email;
-    }
-  }
-
-  return leaderEmail?.toLowerCase().trim() === UNLIMITED_LEADER_EMAIL;
 }
 
 export async function POST(req: NextRequest) {
@@ -62,9 +30,6 @@ export async function POST(req: NextRequest) {
   const team = await db.query.teams.findFirst({
     where: eq(teams.id, membership.teamId),
   });
-
-  const isUnlimitedTeam = await isUnlimitedTeamCheck(membership.teamId);
-  const effectiveMaxSubmissions = isUnlimitedTeam ? 999999 : MAX_SUBMISSIONS_PER_DAY;
 
   const pausedRow = await db.query.settings.findFirst({
     where: eq(settings.key, "submissions_paused"),
@@ -89,7 +54,7 @@ export async function POST(req: NextRequest) {
       )
     );
 
-  if (!isUnlimitedTeam && (countResult?.count ?? 0) >= effectiveMaxSubmissions) {
+  if ((countResult?.count ?? 0) >= MAX_SUBMISSIONS_PER_DAY) {
     return NextResponse.json(
       {
         error: `Maximum of ${MAX_SUBMISSIONS_PER_DAY} submissions per team per day reached. Try again tomorrow.`,
@@ -179,9 +144,6 @@ export async function GET(req: NextRequest) {
     where: eq(teams.id, membership.teamId),
   });
 
-  const isUnlimitedTeam = await isUnlimitedTeamCheck(membership.teamId);
-  const effectiveMaxSubmissions = isUnlimitedTeam ? 999999 : MAX_SUBMISSIONS_PER_DAY;
-
   const subs = await db.query.submissions.findMany({
     where: eq(submissions.teamId, membership.teamId),
     orderBy: (subs, { desc }) => [desc(subs.createdAt)],
@@ -241,7 +203,7 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({
     submissions: enriched,
     totalCount: countResult?.count ?? 0,
-    maxSubmissions: effectiveMaxSubmissions,
+    maxSubmissions: MAX_SUBMISSIONS_PER_DAY,
     submissionsPaused,
   });
 }
