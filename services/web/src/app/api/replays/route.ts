@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { matches, teams, matchParticipants } from "@/lib/db/schema";
+import { matches, teams, matchParticipants, submissions } from "@/lib/db/schema";
 import { eq, or, and, desc, inArray } from "drizzle-orm";
 
 function formatRelativeTime(dateInput: Date | string | null | undefined): string {
@@ -24,23 +24,31 @@ function formatRelativeTime(dateInput: Date | string | null | undefined): string
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
-  const teamId = searchParams.get("teamId");
+  const teamIdParam = searchParams.get("teamId");
   const submissionId = searchParams.get("submissionId");
 
-    try {
-    const baseWhere = submissionId
-      ? eq(matches.status, "finished")
-      : and(eq(matches.status, "finished"), eq(matches.kind, "rated"));
+  try {
+    let effectiveTeamId = teamIdParam;
+    if (!effectiveTeamId && submissionId) {
+      const sub = await db.query.submissions.findFirst({
+        where: eq(submissions.id, submissionId),
+      });
+      if (sub?.teamId) {
+        effectiveTeamId = sub.teamId;
+      }
+    }
 
-    const teamOrSubmissionWhere = teamId
-      ? or(eq(matches.teamAId, teamId), eq(matches.teamBId, teamId))
+    const baseWhere = eq(matches.status, "finished");
+
+    const teamOrSubmissionWhere = effectiveTeamId
+      ? or(eq(matches.teamAId, effectiveTeamId), eq(matches.teamBId, effectiveTeamId))
       : submissionId
         ? or(eq(matches.submissionAId, submissionId), eq(matches.submissionBId, submissionId))
         : undefined;
 
     const whereClause = teamOrSubmissionWhere
       ? and(baseWhere, teamOrSubmissionWhere)
-      : baseWhere;
+      : and(baseWhere, eq(matches.kind, "rated"));
 
     const recentMatches = await db
       .select({
@@ -63,7 +71,7 @@ export async function GET(req: NextRequest) {
       .from(matches)
       .where(whereClause)
       .orderBy(desc(matches.createdAt))
-      .limit(30);
+      .limit(100);
 
     const allTeams = await db.select({ id: teams.id, name: teams.name }).from(teams);
     const teamMap = new Map(allTeams.map((t) => [t.id, t.name]));
@@ -132,6 +140,8 @@ export async function GET(req: NextRequest) {
         scores: Array.isArray(m.scores) ? m.scores : [],
         createdAt: createdDate.toISOString(),
         relativeTime: formatRelativeTime(createdDate),
+        submissionAId: m.submissionAId,
+        submissionBId: m.submissionBId,
       };
     });
 

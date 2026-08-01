@@ -172,7 +172,7 @@ export default function SubmissionsPage() {
         .finally(() => setAutoRefreshing(false));
     };
 
-    const interval = setInterval(fetchQuietly, 30000);
+    const interval = setInterval(fetchQuietly, 10000);
 
     const handleVisibilityChange = () => {
       if (document.visibilityState === "visible") {
@@ -302,7 +302,7 @@ export default function SubmissionsPage() {
 
         <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-4">
           <div className="flex items-center gap-2 text-[11px] text-muted-foreground font-mono">
-            <span className="font-semibold text-foreground">{totalCount}/{maxSubmissions} used</span>
+            <span className="font-semibold text-foreground">{totalCount}/{maxSubmissions >= 999999 ? "∞" : maxSubmissions} used</span>
             <span className="text-border">&bull;</span>
             <span className="flex items-center gap-1 text-[10px]">
               <Clock className="w-3 h-3 text-amber-700 shrink-0" />
@@ -334,7 +334,7 @@ export default function SubmissionsPage() {
             <label
               htmlFor="bot-upload-file"
               className={`inline-flex items-center gap-2 px-4 py-2 rounded-md bg-primary hover:bg-primary/90 text-primary-foreground font-sans font-semibold text-xs shadow-xs transition-all cursor-pointer active:scale-95 ${
-                totalCount >= maxSubmissions || uploading || submissionsPaused ? "opacity-60 pointer-events-none" : ""
+                (maxSubmissions < 999999 && totalCount >= maxSubmissions) || uploading || submissionsPaused ? "opacity-60 pointer-events-none" : ""
               }`}
             >
               {uploading ? (
@@ -371,7 +371,7 @@ export default function SubmissionsPage() {
       <div className="flex items-center gap-2 text-[11px] text-muted-foreground bg-muted border border-border rounded-lg px-4 py-2">
         <Zap className="w-3.5 h-3.5 text-amber-700 shrink-0" />
         <span>
-          Maximum <strong className="text-foreground">{maxSubmissions} submissions</strong> per team per day.
+          Maximum <strong className="text-foreground">{maxSubmissions >= 999999 ? "Unlimited" : `${maxSubmissions} submissions`}</strong> per team per day.
           Only the latest <strong className="text-foreground">2 active</strong> submissions compete in matchmaking.
           Older submissions are archived but visible below.
         </span>

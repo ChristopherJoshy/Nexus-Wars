@@ -51,6 +51,7 @@ export function TopBar() {
               title={userName}
             >
               {session.user.image ? (
+                /* eslint-disable-next-line @next/next/no-img-element */
                 <img
                   src={session.user.image}
                   alt={userName}

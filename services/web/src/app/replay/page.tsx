@@ -39,6 +39,8 @@ interface MatchItem {
   scores: number[];
   createdAt: string;
   relativeTime: string;
+  submissionAId?: string;
+  submissionBId?: string;
 }
 
 interface StepData {
@@ -140,7 +142,12 @@ function GameHistoryContent() {
       .then((data: MatchItem[]) => {
         setMatchList(data);
         if (data.length > 0) {
-          setSelectedMatch(data[0]);
+          let targetMatch = data[0];
+          if (submissionId) {
+            const found = data.find((m) => m.submissionAId === submissionId || m.submissionBId === submissionId);
+            if (found) targetMatch = found;
+          }
+          setSelectedMatch(targetMatch);
         } else {
           setSelectedMatch(null);
         }

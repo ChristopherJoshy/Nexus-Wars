@@ -120,7 +120,7 @@ export default function LeaderboardPage() {
         .finally(() => setAutoRefreshing(false));
     };
 
-    const interval = setInterval(fetchQuietly, 30000);
+    const interval = setInterval(fetchQuietly, 12000);
 
     const handleVisibilityChange = () => {
       if (document.visibilityState === "visible") {
@@ -267,6 +267,7 @@ export default function LeaderboardPage() {
                     <TableCell className="text-center">
                       <div className="flex items-center justify-center -space-x-1.5">
                         {(e.members || []).map((m, idx) => (
+                          /* eslint-disable-next-line @next/next/no-img-element */
                           <img
                             key={idx}
                             src={m.image || `https://api.dicebear.com/7.x/identicon/svg?seed=${encodeURIComponent(m.name)}`}
@@ -296,11 +297,7 @@ export default function LeaderboardPage() {
                     {/* View Episodes action button */}
                     <TableCell className="text-center">
                       <Link
-                        href={
-                          e.bestSubmissionId
-                            ? `/replay?submissionId=${e.bestSubmissionId}&teamName=${encodeURIComponent(e.teamName)}`
-                            : `/replay?teamId=${e.teamId}&teamName=${encodeURIComponent(e.teamName)}`
-                        }
+                        href={`/replay?teamId=${e.teamId}&submissionId=${e.bestSubmissionId || ""}&teamName=${encodeURIComponent(e.teamName)}`}
                         className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-muted hover:bg-primary/10 border border-border hover:border-primary/40 text-xs font-medium text-foreground hover:text-primary transition-all cursor-pointer active:scale-95"
                         title={`Watch episodes for ${e.teamName}`}
                       >
