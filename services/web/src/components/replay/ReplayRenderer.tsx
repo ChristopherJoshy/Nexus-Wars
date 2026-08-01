@@ -133,7 +133,7 @@ export function ReplayRenderer({
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
     // Calculate padding margin so edge planets and text labels never clip
-    const padding = Math.max(28, Math.round(width * 0.05));
+    const padding = Math.max(42, Math.round(width * 0.075));
     const drawWidth = width - padding * 2;
     const drawHeight = height - padding * 2;
     const scale = drawWidth / BOARD_SIZE;

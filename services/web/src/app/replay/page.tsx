@@ -227,40 +227,8 @@ function GameHistoryContent() {
     }
   }, [matchList]);
 
-  // Calculate max step by detecting complete elimination of either player
-  const maxStep = (() => {
-    if (!replay || !replay.steps || replay.steps.length === 0) return 0;
-
-    for (let i = 0; i < replay.steps.length; i++) {
-      const stepData = replay.steps[i];
-      const rawPlanets = stepData.observation?.planets || [];
-      const rawFleets = stepData.observation?.fleets || [];
-
-      let p0Total = 0;
-      let p1Total = 0;
-
-      for (const p of rawPlanets) {
-        const owner = p[1];
-        const ships = p[5] || 0;
-        if (owner === 0) p0Total += ships + 1;
-        else if (owner === 1) p1Total += ships + 1;
-      }
-
-      for (const f of rawFleets) {
-        const owner = f[1];
-        const ships = f[6] || 0;
-        if (owner === 0) p0Total += ships + 1;
-        else if (owner === 1) p1Total += ships + 1;
-      }
-
-      // If either player is completely eliminated (0 planets, 0 ships, 0 fleets)
-      if (i > 0 && (p0Total === 0 || p1Total === 0)) {
-        return i;
-      }
-    }
-
-    return replay.steps.length - 1;
-  })();
+  // Allow playing through all recorded steps in the match
+  const maxStep = replay && replay.steps ? Math.max(0, replay.steps.length - 1) : 0;
 
   // Smooth, high-precision requestAnimationFrame playback loop
   useEffect(() => {
