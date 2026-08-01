@@ -14,6 +14,8 @@ import {
   Copy,
   Check,
   SlidersHorizontal,
+  Bot,
+  Download,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ReplayRenderer } from "@/components/replay/ReplayRenderer";
@@ -295,6 +297,37 @@ export default function MatchReplayPage({
     setTimeout(() => setCopied(false), 2000);
   };
 
+  const downloadMatchJson = (e: React.MouseEvent, matchId: string) => {
+    e.stopPropagation();
+
+    const triggerDownload = (jsonObj: unknown) => {
+      const blob = new Blob([JSON.stringify(jsonObj, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `match-${matchId}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    };
+
+    const cached = clientCache.getReplay(matchId);
+    if (cached) {
+      triggerDownload(cached);
+      return;
+    }
+
+    const headers: Record<string, string> = {};
+    if (session?.token) headers["Authorization"] = `Bearer ${session.token}`;
+
+    fetch(`/api/replays/${matchId}`, { headers })
+      .then((res) => res.json())
+      .then((data) => {
+        clientCache.setReplay(matchId, data);
+        triggerDownload(data);
+      })
+      .catch(() => {});
+  };
+
   const currentStep = replay ? replay.steps[Math.min(step, replay.steps.length - 1)] : null;
 
   return (
@@ -354,47 +387,70 @@ export default function MatchReplayPage({
           {matchList.map((m) => {
             const isSelected = selectedMatch?.id === m.id;
             return (
-              <button
+              <div
                 key={m.id}
                 onClick={() => selectMatch(m)}
-                type="button"
-                className={`history-item-anim w-full text-left p-3 rounded-lg border transition-all cursor-pointer ${
+                className={`history-item-anim w-full text-left p-2.5 rounded-2xl border transition-all cursor-pointer space-y-2 ${
                   isSelected
-                    ? "bg-secondary border-primary/60 shadow-xs"
-                    : "bg-background/60 border-border/80 hover:bg-muted/50 hover:border-border"
+                    ? "bg-secondary/70 border-primary/60 shadow-xs"
+                    : "bg-background/60 border-border/80 hover:bg-muted/40 hover:border-border"
                 }`}
               >
-                {/* Team A */}
-                <div className="flex items-center justify-between text-xs mb-1.5">
-                  <div className="flex items-center gap-1.5 truncate max-w-[170px]">
-                    <span className="w-1.5 h-1.5 rounded-full bg-sky-500 shrink-0" />
-                    <span className={`truncate font-semibold ${m.winner === "a" ? "text-foreground" : "text-muted-foreground"}`}>
-                      {m.teamA}
-                    </span>
-                    {m.winner === "a" && (
-                      <Trophy className="w-3 h-3 text-amber-500 shrink-0" />
-                    )}
-                  </div>
+                {/* Card Header: Relative time on left, Download on right */}
+                <div className="flex items-center justify-between text-[11px] font-mono text-muted-foreground/80 px-1">
+                  <span>{formatRelativeTime(m.finishedAt || m.createdAt)}</span>
+                  <button
+                    type="button"
+                    onClick={(e) => downloadMatchJson(e, m.id)}
+                    className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors shrink-0 cursor-pointer"
+                    title="Download match JSON data"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                  </button>
                 </div>
 
-                {/* Team B */}
-                <div className="flex items-center justify-between text-xs">
-                  <div className="flex items-center gap-1.5 truncate max-w-[170px]">
-                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />
-                    <span className={`truncate font-semibold ${m.winner === "b" ? "text-foreground" : "text-muted-foreground"}`}>
-                      {m.teamB}
+                {/* Card Inner Box with Team Rows & Divider */}
+                <div className="rounded-xl border border-border/70 bg-background/50 p-2.5 space-y-2 font-mono">
+                  {/* Team A (Blue) */}
+                  <div className="flex items-center justify-between text-xs">
+                    <div className="flex items-center gap-2 truncate max-w-[170px]">
+                      <div className="w-6 h-6 rounded-full bg-blue-500/15 border border-blue-500/35 flex items-center justify-center shrink-0 text-blue-600">
+                        <Bot className="w-3.5 h-3.5" />
+                      </div>
+                      <span className={`truncate font-semibold text-xs ${m.winner === "a" ? "text-foreground" : "text-muted-foreground"}`}>
+                        {m.teamA}
+                      </span>
+                      {m.winner === "a" && (
+                        <Trophy className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                      )}
+                    </div>
+                    <span className="text-[10px] text-muted-foreground/70 font-mono">
+                      {m.teamARating ? Math.round(m.teamARating) : 600}
                     </span>
-                    {m.winner === "b" && (
-                      <Trophy className="w-3 h-3 text-amber-500 shrink-0" />
-                    )}
+                  </div>
+
+                  {/* Horizontal Inner Divider */}
+                  <div className="border-t border-border/60" />
+
+                  {/* Team B (Orange) */}
+                  <div className="flex items-center justify-between text-xs">
+                    <div className="flex items-center gap-2 truncate max-w-[170px]">
+                      <div className="w-6 h-6 rounded-full bg-orange-500/15 border border-orange-500/35 flex items-center justify-center shrink-0 text-orange-600">
+                        <Bot className="w-3.5 h-3.5" />
+                      </div>
+                      <span className={`truncate font-semibold text-xs ${m.winner === "b" ? "text-foreground" : "text-muted-foreground"}`}>
+                        {m.teamB}
+                      </span>
+                      {m.winner === "b" && (
+                        <Trophy className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                      )}
+                    </div>
+                    <span className="text-[10px] text-muted-foreground/70 font-mono">
+                      {m.teamBRating ? Math.round(m.teamBRating) : 600}
+                    </span>
                   </div>
                 </div>
-
-                {/* Relative time (computed client-side for live updates) */}
-                <div className="text-[10px] text-muted-foreground/70 mt-1 font-mono">
-                  {formatRelativeTime(m.finishedAt || m.createdAt)}
-                </div>
-              </button>
+              </div>
             );
           })}
         </div>

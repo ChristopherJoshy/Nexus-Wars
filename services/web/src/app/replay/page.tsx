@@ -16,6 +16,7 @@ import {
   Check,
   Download,
   Monitor,
+  Bot,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -499,53 +500,66 @@ function GameHistoryContent() {
                 <div
                   key={m.id}
                   onClick={() => selectMatch(m)}
-                  className={`history-item-anim w-full text-left p-2.5 rounded-md border transition-all cursor-pointer flex items-center justify-between gap-2 ${
+                  className={`history-item-anim w-full text-left p-2.5 rounded-2xl border transition-all cursor-pointer space-y-2 ${
                     isSelected
-                      ? "bg-secondary border-primary/60 shadow-xs"
-                      : "bg-background/60 border-border/80 hover:bg-muted/50 hover:border-border"
+                      ? "bg-secondary/70 border-primary/60 shadow-xs"
+                      : "bg-background/60 border-border/80 hover:bg-muted/40 hover:border-border"
                   }`}
                 >
-                  <div className="flex-1 min-w-0">
+                  {/* Card Header: Relative time on left, Download on right */}
+                  <div className="flex items-center justify-between text-[11px] font-mono text-muted-foreground/80 px-1">
+                    <span>{formatRelativeTime(m.finishedAt || m.createdAt)}</span>
+                    <button
+                      type="button"
+                      onClick={(e) => downloadMatchJson(e, m.id)}
+                      className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors shrink-0 cursor-pointer"
+                      title="Download match JSON data"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+
+                  {/* Card Inner Box with Team Rows & Divider */}
+                  <div className="rounded-xl border border-border/70 bg-background/50 p-2.5 space-y-2 font-mono">
                     {/* Team A (Blue) */}
-                    <div className="flex items-center justify-between text-xs mb-1">
-                      <div className="flex items-center gap-1.5 truncate max-w-[150px]">
-                        <span className="w-2 h-2 rounded-full bg-blue-600 shrink-0" />
-                        <span className={`truncate font-semibold text-[11px] ${m.winner === "a" ? "text-foreground" : "text-muted-foreground"}`}>
+                    <div className="flex items-center justify-between text-xs">
+                      <div className="flex items-center gap-2 truncate max-w-[170px]">
+                        <div className="w-6 h-6 rounded-full bg-blue-500/15 border border-blue-500/35 flex items-center justify-center shrink-0 text-blue-600">
+                          <Bot className="w-3.5 h-3.5" />
+                        </div>
+                        <span className={`truncate font-semibold text-xs ${m.winner === "a" ? "text-foreground" : "text-muted-foreground"}`}>
                           {m.teamA}
                         </span>
                         {m.winner === "a" && (
-                          <Trophy className="w-3 h-3 text-amber-600 shrink-0" />
+                          <Trophy className="w-3.5 h-3.5 text-amber-600 shrink-0" />
                         )}
                       </div>
+                      <span className="text-[10px] text-muted-foreground/70 font-mono">
+                        {m.teamARating ? Math.round(m.teamARating) : 600}
+                      </span>
                     </div>
+
+                    {/* Horizontal Inner Divider */}
+                    <div className="border-t border-border/60" />
 
                     {/* Team B (Orange) */}
                     <div className="flex items-center justify-between text-xs">
-                      <div className="flex items-center gap-1.5 truncate max-w-[150px]">
-                        <span className="w-2 h-2 rounded-full bg-orange-600 shrink-0" />
-                        <span className={`truncate font-semibold text-[11px] ${m.winner === "b" ? "text-foreground" : "text-muted-foreground"}`}>
+                      <div className="flex items-center gap-2 truncate max-w-[170px]">
+                        <div className="w-6 h-6 rounded-full bg-orange-500/15 border border-orange-500/35 flex items-center justify-center shrink-0 text-orange-600">
+                          <Bot className="w-3.5 h-3.5" />
+                        </div>
+                        <span className={`truncate font-semibold text-xs ${m.winner === "b" ? "text-foreground" : "text-muted-foreground"}`}>
                           {m.teamB}
                         </span>
                         {m.winner === "b" && (
-                          <Trophy className="w-3 h-3 text-amber-600 shrink-0" />
+                          <Trophy className="w-3.5 h-3.5 text-amber-600 shrink-0" />
                         )}
                       </div>
-                    </div>
-
-                    {/* Relative time (computed client-side for live updates) */}
-                    <div className="text-[10px] text-muted-foreground/70 mt-1 font-mono">
-                      {formatRelativeTime(m.finishedAt || m.createdAt)}
+                      <span className="text-[10px] text-muted-foreground/70 font-mono">
+                        {m.teamBRating ? Math.round(m.teamBRating) : 600}
+                      </span>
                     </div>
                   </div>
-
-                  <button
-                    type="button"
-                    onClick={(e) => downloadMatchJson(e, m.id)}
-                    className="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors shrink-0 cursor-pointer"
-                    title="Download match JSON data"
-                  >
-                    <Download className="w-3.5 h-3.5" />
-                  </button>
                 </div>
               );
             })
