@@ -7,7 +7,7 @@ import { getS3, S3_BUCKET, PutObjectCommand } from "@/lib/s3";
 import { randomUUID } from "crypto";
 import { parsePausedValue } from "@/app/api/admin/route";
 
-const MAX_SUBMISSIONS_PER_DAY = 5;
+const MAX_SUBMISSIONS_PER_DAY = 10;
 
 function getTodayStartUTC(): Date {
   const now = new Date();
