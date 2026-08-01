@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
-import { Analytics } from "@vercel/analytics/react";
+import { Analytics } from "@vercel/analytics/next";
 import "./globals.css";
 import { TopBar } from "@/components/layout/TopBar";
 import { CompetitionHeader } from "@/components/layout/CompetitionHeader";
