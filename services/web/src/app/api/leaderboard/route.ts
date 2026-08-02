@@ -101,8 +101,8 @@ export async function GET() {
       .sort((a, b) => (b.rating ?? 600) - (a.rating ?? 600));
 
     return NextResponse.json(result);
-  } catch (error) {
+  } catch (error: any) {
     console.error("Leaderboard GET error:", error);
-    return NextResponse.json([]);
+    return NextResponse.json({ error: String(error), stack: error?.stack }, { status: 500 });
   }
 }
