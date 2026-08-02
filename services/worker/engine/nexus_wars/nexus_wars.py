@@ -113,7 +113,7 @@ def generate_planets(rng=None, energy_cap=DEFAULT_ENERGY_CAP,
             [id_counter,     -1, x,               y,          r, ships, prod, e, e, er],
             [id_counter + 1, -1, BOARD_SIZE - x,  y,          r, ships, prod, e, e, er],
             [id_counter + 2, -1, x,               BOARD_SIZE - y, r, ships, prod, e, e, er],
-            [id_counter + 3, -1, BOARD_SIZE - y,  BOARD_SIZE - x, r, ships, prod, e, e, er],
+            [id_counter + 3, -1, BOARD_SIZE - x,  BOARD_SIZE - y, r, ships, prod, e, e, er],
         ]
 
     # Phase 1: guaranteed static planet groups (outside the rotation band).
