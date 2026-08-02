@@ -156,7 +156,8 @@ export default function LeaderboardPage() {
   };
 
   const filteredEntries = entries.filter((e) =>
-    e.teamName.toLowerCase().includes(searchQuery.toLowerCase())
+    e.teamName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    e.members?.some((m) => m.name.toLowerCase().includes(searchQuery.toLowerCase()))
   );
 
   useEffect(() => {
@@ -210,7 +211,7 @@ export default function LeaderboardPage() {
           type="text"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder="Search teams"
+          placeholder="Search teams or players"
           className="w-full h-10 pl-11 pr-4 bg-card hover:bg-muted focus:bg-card border border-border focus:border-primary rounded-lg text-xs text-foreground placeholder:text-muted-foreground outline-none transition-all"
         />
       </div>
