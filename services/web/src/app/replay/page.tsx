@@ -25,6 +25,7 @@ import { useSession } from "@/lib/auth-client";
 import { clientCache } from "@/lib/client-cache";
 import { animate } from "animejs";
 import { formatRelativeTime, useTick } from "@/lib/time";
+import JSZip from "jszip";
 
 interface MatchItem {
   id: string;
@@ -94,6 +95,43 @@ function GameHistoryContent() {
   const [playing, setPlaying] = useState(false);
   const [speedMultiplier, setSpeedMultiplier] = useState<0.5 | 1 | 2 | 4>(1);
   const [copied, setCopied] = useState(false);
+  const [downloadingZip, setDownloadingZip] = useState(false);
+
+  const handleDownloadAll = async () => {
+    if (matchList.length === 0) return;
+    setDownloadingZip(true);
+    try {
+      const zip = new JSZip();
+      
+      const downloadPromises = matchList.map(async (m) => {
+        try {
+          const res = await fetch(`/api/replays/${m.id}`);
+          if (res.ok) {
+            const data = await res.json();
+            if (!data.error) {
+              zip.file(`replay_${m.id}.json`, JSON.stringify(data, null, 2));
+            }
+          }
+        } catch (e) {
+          console.error(`Failed to fetch replay ${m.id}`, e);
+        }
+      });
+      
+      await Promise.all(downloadPromises);
+      
+      const blob = await zip.generateAsync({ type: "blob" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `nexus-wars-replays-${submissionId || teamId || "all"}.zip`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error("Failed to generate zip", e);
+    } finally {
+      setDownloadingZip(false);
+    }
+  };
 
   // Responsive canvas size
   const [canvasDim, setCanvasDim] = useState(580);
@@ -465,6 +503,21 @@ function GameHistoryContent() {
             <div className="text-[10px] text-muted-foreground">{matchList.length} matches recorded</div>
           </div>
           <div className="flex items-center gap-1.5">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleDownloadAll}
+              disabled={downloadingZip || loadingMatches || matchList.length === 0}
+              className="h-6 px-2 text-[10px] font-mono border-border hover:bg-muted gap-1"
+              title="Download all replays as ZIP"
+            >
+              {downloadingZip ? (
+                <RotateCcw className="w-3 h-3 animate-spin" />
+              ) : (
+                <Download className="w-3 h-3" />
+              )}
+              ZIP
+            </Button>
             <Button
               variant="outline"
               size="sm"
