@@ -433,6 +433,7 @@ def interpreter(state, env):
         state[i].observation.initial_planets = obs0.initial_planets
         state[i].observation.fleets = obs0.fleets
         state[i].observation.next_fleet_id = obs0.next_fleet_id
+        state[i].observation.angular_velocity = obs0.angular_velocity
 
     # 6. Termination — FIXED off-by-one: every step 0..episodeSteps-1 resolves.
     terminated = False
