@@ -327,8 +327,7 @@ def update_ratings(conn, team_a, team_b, winner, match_id, sub_a, sub_b):
 # --------------------------------------------------------------------------
 # Dispatch
 # --------------------------------------------------------------------------
-def run_job(job):
-    conn = get_conn()
+def run_job(job, conn):
     try:
         jtype = job[1]
         payload = job[2] if isinstance(job[2], dict) else json.loads(job[2])
@@ -342,5 +341,3 @@ def run_job(job):
     except Exception:
         conn.rollback()
         raise
-    finally:
-        conn.close()

@@ -103,7 +103,7 @@ def process(job):
     job_id = job[0]
     conn = get_conn()
     try:
-        jobs.run_job(job)
+        jobs.run_job(job, conn)
         execute(conn, "UPDATE jobs SET status='done', finished_at=now() WHERE id=%s", (job_id,))
         conn.commit()
         print(f"[ok] job {job_id} ({job[1]})")
