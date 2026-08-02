@@ -155,10 +155,12 @@ export default function LeaderboardPage() {
     URL.revokeObjectURL(url);
   };
 
-  const filteredEntries = entries.filter((e) =>
-    e.teamName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    e.members?.some((m) => m.name.toLowerCase().includes(searchQuery.toLowerCase()))
-  );
+  const filteredEntries = entries.filter((e) => {
+    const query = searchQuery.toLowerCase();
+    const teamMatch = e.teamName?.toLowerCase().includes(query) ?? false;
+    const memberMatch = e.members?.some((m) => m.name?.toLowerCase().includes(query)) ?? false;
+    return teamMatch || memberMatch;
+  });
 
   useEffect(() => {
     if (!loading && filteredEntries.length > 0 && tableRef.current) {
