@@ -9,7 +9,7 @@ import { parsePausedValue } from "@/app/api/admin/route";
 import { createPresignedPost } from "@aws-sdk/s3-presigned-post";
 
 const MAX_SUBMISSIONS_PER_DAY = 10;
-const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024; // 10 MB
+const MAX_FILE_SIZE_BYTES = 12 * 1024 * 1024; // 12 MB
 
 function getTodayStartUTC(): Date {
   const now = new Date();
@@ -85,7 +85,7 @@ export async function POST(req: NextRequest) {
       Bucket: S3_BUCKET,
       Key: artifactKey,
       Conditions: [
-        ["content-length-range", 0, MAX_FILE_SIZE_BYTES], // Strictly limit file size at MinIO layer (10MB max)
+        ["content-length-range", 0, MAX_FILE_SIZE_BYTES], // Strictly limit file size at MinIO layer (12MB max)
       ],
       Fields: {
         success_action_status: "201",
