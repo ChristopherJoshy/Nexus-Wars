@@ -35,6 +35,20 @@ export async function getSession(req: NextRequest) {
           image: decoded.picture || null,
         })
         .returning();
+    } else {
+      // Sync name and image if they changed
+      const nameChanged = decoded.name && user.name !== decoded.name;
+      const imageChanged = decoded.picture && user.image !== decoded.picture;
+      if (nameChanged || imageChanged) {
+        [user] = await db
+          .update(users)
+          .set({
+            name: decoded.name || user.name,
+            image: decoded.picture || user.image,
+          })
+          .where(eq(users.firebaseUid, decoded.uid))
+          .returning();
+      }
     }
 
     return {
