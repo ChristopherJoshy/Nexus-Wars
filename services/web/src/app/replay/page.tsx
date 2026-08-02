@@ -31,6 +31,7 @@ interface MatchItem {
   id: string;
   seed: number;
   kind: string;
+  status: string;
   teamA: string;
   teamB: string;
   teamAImage?: string | null;
@@ -230,6 +231,11 @@ function GameHistoryContent() {
   // Fetch Replay Data when selectedMatch changes (with client memory cache for 0ms loads)
   useEffect(() => {
     if (!selectedMatch) return;
+
+    if (selectedMatch.status !== "finished") {
+      Promise.resolve().then(() => setReplay(null));
+      return;
+    }
 
     const cached = clientCache.getReplay(selectedMatch.id);
     if (cached) {
@@ -559,7 +565,7 @@ function GameHistoryContent() {
                     isSelected
                       ? "bg-secondary/70 border-primary/60 shadow-xs"
                       : "bg-background/60 border-border/80 hover:bg-muted/40 hover:border-border"
-                  }`}
+                  } ${m.status !== "finished" ? "opacity-60" : ""}`}
                 >
                   {/* Card Header: Relative time on left, Download on right */}
                   <div className="flex items-center justify-between text-[11px] font-mono text-muted-foreground/80 px-1">
@@ -822,6 +828,21 @@ function GameHistoryContent() {
                 <span className="text-xs text-muted-foreground uppercase tracking-widest animate-pulse">
                   LOADING MATCH HISTORY...
                 </span>
+              </div>
+            ) : selectedMatch && selectedMatch.status !== "finished" ? (
+              <div className="flex flex-col items-center justify-center space-y-4 max-w-sm mx-auto text-center font-mono p-6 bg-card border border-border rounded-lg shadow-xs">
+                <div className="p-3 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-600 animate-pulse">
+                  <Monitor className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-amber-600 uppercase tracking-wide">
+                    [ MATCH IN PROGRESS ]
+                  </h3>
+                  <p className="text-xs text-muted-foreground mt-2 leading-relaxed">
+                    This episode is currently being simulated by the worker node.
+                    The replay will be available as soon as it finishes.
+                  </p>
+                </div>
               </div>
             ) : selectedMatch ? (
               <div className="flex flex-col items-center justify-center space-y-3 font-mono">

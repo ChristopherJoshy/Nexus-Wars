@@ -9,7 +9,7 @@ export async function GET(req: NextRequest) {
   const submissionId = searchParams.get("submissionId");
 
   try {
-    const baseWhere = eq(matches.status, "finished");
+    const baseWhere = inArray(matches.status, ["finished", "pending", "running"]);
 
     // If submissionId is provided (e.g. from Submissions page "Episodes" button),
     // strictly filter matches played by that specific bot submission.
@@ -120,6 +120,7 @@ export async function GET(req: NextRequest) {
         id: m.id,
         seed: m.seed || 927316646,
         kind: m.kind,
+        status: m.status,
         teamA: teamAName,
         teamB: teamBName,
         teamAImage,
