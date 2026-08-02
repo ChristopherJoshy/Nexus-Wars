@@ -99,6 +99,8 @@ export default function SubmissionsPage() {
   const [reloadToken, setReloadToken] = useState(0);
   const [filter, setFilter] = useState<"all" | "successful" | "errors">("all");
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadSpeed, setUploadSpeed] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [hasTeam, setHasTeam] = useState<boolean | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -263,6 +265,8 @@ export default function SubmissionsPage() {
     }
 
     setUploading(true);
+    setUploadProgress(0);
+    setUploadSpeed("");
     setError(null);
 
     try {
@@ -283,21 +287,53 @@ export default function SubmissionsPage() {
       
       const { url, fields, subId, artifactKey } = await presignRes.json();
 
-      // 2. Upload file directly to S3/MinIO
+      // 2. Upload file directly to S3/MinIO using XMLHttpRequest to track progress
       const uploadData = new FormData();
       Object.entries(fields).forEach(([key, value]) => {
         uploadData.append(key, value as string);
       });
       uploadData.append("file", file); // file must be the last field
 
-      const s3Res = await fetch(url, {
-        method: "POST",
-        body: uploadData,
-      });
+      await new Promise<void>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        let startTime = Date.now();
+        let lastLoaded = 0;
 
-      if (!s3Res.ok) {
-        throw new Error("Failed to upload file to storage server");
-      }
+        xhr.upload.onprogress = (event) => {
+          if (event.lengthComputable) {
+            const percentComplete = Math.round((event.loaded / event.total) * 100);
+            setUploadProgress(percentComplete);
+
+            const currentTime = Date.now();
+            const timeDiff = (currentTime - startTime) / 1000; // in seconds
+            
+            // update speed every 500ms
+            if (timeDiff > 0.5) {
+              const bytesDiff = event.loaded - lastLoaded;
+              const speedBps = bytesDiff / timeDiff;
+              const speedMbps = (speedBps / (1024 * 1024)).toFixed(1);
+              setUploadSpeed(`${speedMbps} MB/s`);
+              
+              startTime = currentTime;
+              lastLoaded = event.loaded;
+            }
+          }
+        };
+
+        xhr.onload = () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            resolve();
+          } else {
+            reject(new Error("Failed to upload file to storage server"));
+          }
+        };
+
+        xhr.onerror = () => reject(new Error("Network error during file upload"));
+        xhr.onabort = () => reject(new Error("Upload aborted"));
+
+        xhr.open("POST", url);
+        xhr.send(uploadData);
+      });
 
       // 3. Finalize submission
       const completeRes = await fetch("/api/submissions/complete", {
@@ -321,6 +357,8 @@ export default function SubmissionsPage() {
       setError(err.message || "Network error during upload");
     } finally {
       setUploading(false);
+      setUploadProgress(0);
+      setUploadSpeed("");
       if (fileRef.current) fileRef.current.value = "";
     }
   };
@@ -348,6 +386,8 @@ export default function SubmissionsPage() {
         <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-4">
           <div className="flex items-center gap-2 text-[11px] text-muted-foreground font-mono">
             <span className="font-semibold text-foreground">{totalCount}/{maxSubmissions >= 999999 ? "∞" : maxSubmissions} used</span>
+            <span className="text-border">&bull;</span>
+            <span className="font-medium">Max 10MB</span>
             <span className="text-border">&bull;</span>
             <span className="flex items-center gap-1 text-[10px]">
               <Clock className="w-3 h-3 text-amber-700 shrink-0" />
@@ -409,6 +449,27 @@ export default function SubmissionsPage() {
           <button onClick={() => setError(null)} className="underline cursor-pointer shrink-0">
             Dismiss
           </button>
+        </div>
+      )}
+
+      {/* Uploading Overlay */}
+      {uploading && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm">
+          <div className="bg-card border border-border shadow-xl rounded-xl p-6 w-[90%] max-w-sm mx-auto flex flex-col items-center gap-4 text-center">
+            <Loader2 className="w-10 h-10 animate-spin text-primary" />
+            <div className="space-y-1">
+              <h3 className="font-semibold text-lg">Uploading Bot...</h3>
+              <p className="text-sm text-muted-foreground font-mono">
+                {uploadProgress}% &bull; {uploadSpeed || "Calculating..."}
+              </p>
+            </div>
+            <div className="w-full bg-muted rounded-full h-2.5 overflow-hidden border border-border/50">
+              <div 
+                className="bg-primary h-2.5 rounded-full transition-all duration-300" 
+                style={{ width: `${uploadProgress}%` }}
+              ></div>
+            </div>
+          </div>
         </div>
       )}
 
