@@ -257,9 +257,9 @@ export default function SubmissionsPage() {
     if (!fileRef.current?.files?.[0] || !session) return;
     const file = fileRef.current.files[0];
 
-    const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
+    const MAX_FILE_SIZE = 12 * 1024 * 1024; // 12 MB
     if (file.size > MAX_FILE_SIZE) {
-      setError("File size exceeds 10 MB limit.");
+      setError("File size exceeds 12 MB limit.");
       if (fileRef.current) fileRef.current.value = "";
       return;
     }
@@ -387,7 +387,7 @@ export default function SubmissionsPage() {
           <div className="flex items-center gap-2 text-[11px] text-muted-foreground font-mono">
             <span className="font-semibold text-foreground">{totalCount}/{maxSubmissions >= 999999 ? "∞" : maxSubmissions} used</span>
             <span className="text-border">&bull;</span>
-            <span className="font-medium">Max 10MB</span>
+            <span className="font-medium">Max 12MB</span>
             <span className="text-border">&bull;</span>
             <span className="flex items-center gap-1 text-[10px]">
               <Clock className="w-3 h-3 text-amber-700 shrink-0" />
