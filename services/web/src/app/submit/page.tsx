@@ -253,27 +253,72 @@ export default function SubmissionsPage() {
 
   const upload = async () => {
     if (!fileRef.current?.files?.[0] || !session) return;
+    const file = fileRef.current.files[0];
+
+    const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
+    if (file.size > MAX_FILE_SIZE) {
+      setError("File size exceeds 10 MB limit.");
+      if (fileRef.current) fileRef.current.value = "";
+      return;
+    }
+
     setUploading(true);
     setError(null);
-    const formData = new FormData();
-    formData.append("file", fileRef.current.files[0]);
 
     try {
-      const res = await fetch("/api/submissions", {
+      // 1. Get Presigned POST URL and fields
+      const presignRes = await fetch("/api/submissions/presign", {
         method: "POST",
-        headers: { Authorization: `Bearer ${session.token}` },
-        body: formData,
+        headers: { 
+          Authorization: `Bearer ${session.token}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ filename: file.name }),
       });
-      if (res.ok) {
-        const sub = await res.json();
-        setSubmissions((prev) => [sub, ...prev]);
-        setTotalCount((c) => c + 1);
-      } else {
-        const err = await res.json().catch(() => ({ error: "Upload failed" }));
-        setError(err.error || "Upload failed");
+      
+      if (!presignRes.ok) {
+        const err = await presignRes.json().catch(() => ({ error: "Failed to initialize upload" }));
+        throw new Error(err.error || "Failed to initialize upload");
       }
-    } catch {
-      setError("Network error during upload");
+      
+      const { url, fields, subId, artifactKey } = await presignRes.json();
+
+      // 2. Upload file directly to S3/MinIO
+      const uploadData = new FormData();
+      Object.entries(fields).forEach(([key, value]) => {
+        uploadData.append(key, value as string);
+      });
+      uploadData.append("file", file); // file must be the last field
+
+      const s3Res = await fetch(url, {
+        method: "POST",
+        body: uploadData,
+      });
+
+      if (!s3Res.ok) {
+        throw new Error("Failed to upload file to storage server");
+      }
+
+      // 3. Finalize submission
+      const completeRes = await fetch("/api/submissions/complete", {
+        method: "POST",
+        headers: { 
+          Authorization: `Bearer ${session.token}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ subId, artifactKey }),
+      });
+
+      if (!completeRes.ok) {
+        throw new Error("Failed to finalize submission");
+      }
+
+      const sub = await completeRes.json();
+      setSubmissions((prev) => [sub, ...prev]);
+      setTotalCount((c) => c + 1);
+
+    } catch (err: any) {
+      setError(err.message || "Network error during upload");
     } finally {
       setUploading(false);
       if (fileRef.current) fileRef.current.value = "";

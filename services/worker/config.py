@@ -22,10 +22,10 @@ ENGINE_DIR = env("ENGINE_DIR", os.path.join(BASE_DIR, "engine", "nexus_wars"))
 ENGINE_VERSION = env("ENGINE_VERSION", "2026.1.0")
 
 # Match parameters
-# Per-step timeout: 1000 ms per agent move.
-# Match timeout: 6 minutes max.
-ACT_TIMEOUT = float(env("ACT_TIMEOUT", "1.0"))
-RUN_TIMEOUT = float(env("RUN_TIMEOUT", "360"))
+# Per-step timeout: 2000 ms per agent move (allows slow bots to respond).
+# Match timeout: 8.5 minutes max.
+ACT_TIMEOUT = float(env("ACT_TIMEOUT", "2.0"))
+RUN_TIMEOUT = float(env("RUN_TIMEOUT", "510"))
 EPISODE_STEPS = int(env("EPISODE_STEPS", "500"))
 SHIP_SPEED = float(env("SHIP_SPEED", "6.0"))
 ENERGY_CAP = int(env("ENERGY_CAP", "100"))

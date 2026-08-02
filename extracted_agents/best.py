@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 import json
 import math
 import os
@@ -6,50 +5,100 @@ import sys
 import time
 import traceback
 
-# Set NEXUS_DEBUG to a file path to trace planning decisions (the harness
-# swallows bot stderr, so diagnostics go to their own file).
-DEBUG = os.environ.get("NEXUS_DEBUG")
-_dbg = open(DEBUG, "a", buffering=1) if DEBUG else None
-
-# --- Engine constants (nexus_wars.py) -------------------------------------
 BOARD = 100.0
 C = 50.0
 SUN_R = 10.0
 ROT_LIMIT = 50.0
 MAX_SPEED = 6.0
 LAUNCH_COST = 20
-LAUNCH_OFFSET = 0.1          # engine spawns fleets at radius + 0.1
+LAUNCH_OFFSET = 0.1
 
-# --- Tunables -------------------------------------------------------------
-SUN_PAD = 1.8                # clearance over the hard 10.0 kill radius
-HORIZON = 60                 # planning depth, ticks (upper bound)
-HORIZON_MIN = 26             # floor when the board is heavy
-WORK_BUDGET = 90000          # fleets * planets * ticks we allow per turn
-TIME_BUDGET = 0.055          # seconds of planning before we bail out safely
-MAX_POOL = 8                 # max planets pooled into one ToT strike
-MAX_PLANS = 4                # max NEW strikes opened per turn
-MAX_TARGETS = 18             # target shortlist size
-TOT_WINDOW = 8               # extra arrival ticks probed past the earliest
-BASE_KEEP = 3                # baseline garrison never spent
-FRONT_KEEP = 8               # extra garrison held on frontline planets
-FRONT_DIST = 30.0            # "frontline" = this close to an enemy planet
+SUN_PAD = 1.8
+HORIZON = 60
+HORIZON_MIN = 26
+WORK_BUDGET = 90000
+TIME_BUDGET = 0.12
+MAX_POOL = 8
+MAX_PLANS = 4
+MAX_TARGETS = 18
+TOT_WINDOW = 8
+BASE_KEEP = 2
+ENERGY_CYCLE = 80.0
+EXPAND_W = 1.0
+IMMEDIATE_CAPTURE = True
+HUB_LOGISTICS = False
+PROD_EXP = 1.0
+FRONT_KEEP = 8
+FRONT_DIST = 30.0
 MIN_FLEET = 3
-HUB_MIN_FLEET = 10           # a logistics run must be worth its 20 energy
-HUB_GAIN = 1.15              # rear planet must be this much further out
-CAPACITY_SAFETY = 1.08       # pooled supply must beat demand by this factor
+HUB_MIN_FLEET = 10
+HUB_GAIN = 1.15
+CAPACITY_SAFETY = 1.00
 PROD_W = 26.0
 NEUTRAL_BONUS = 34.0
 ENEMY_BONUS = 20.0
 TIME_W = 1.35
-COMMIT_BONUS = 45.0          # bias toward targets we already committed to
-MAX_ACTIVE_PLANS = 6         # cap on simultaneously open ToT plans
-PLAN_STALE = 10              # drop an unstarted plan after this many turns
+COMMIT_BONUS = 45.0
+LANE_GAIN = 1.25
+LANE_TIME_W = 1.0
+AIM_OFFSETS = (0.015, -0.015, 0.03, -0.03, 0.05, -0.05)
+RECOVERY_BUDGET = 40
+MAX_ACTIVE_PLANS = 6
+PLAN_STALE = 10
+DIFF_KEEP_RELAX = 0.40
+DIFF_EXPAND_BONUS = 55.0
+DIFF_URGENT = -2
+MULTI_LAUNCH = 1
 
 _SPEED_CACHE = {}
 
 
+def debug_log(msg):
+    try:
+        sys.stderr.write("[best] %s\n" % (msg,))
+        sys.stderr.flush()
+    except Exception:
+        pass
+
+
+def _finite(*vals):
+    for v in vals:
+        if not isinstance(v, (int, float)):
+            return False
+        if v != v or v == float("inf") or v == float("-inf"):
+            return False
+    return True
+
+
+def sanitize(obs):
+    planets = []
+    for p in obs.get("planets") or []:
+        if not isinstance(p, (list, tuple)) or len(p) < 10:
+            continue
+        if not _finite(p[2], p[3], p[4], p[5], p[6], p[7], p[9]):
+            continue
+        if p[4] <= 0.0:
+            continue
+        regen = float(p[9]) if p[9] and p[9] > 0 else 1.0
+        planets.append([p[0], int(p[1]), float(p[2]), float(p[3]), float(p[4]),
+                        int(p[5]), int(p[6]), float(p[7]), float(p[8]), regen])
+    fleets = []
+    for f in obs.get("fleets") or []:
+        if not isinstance(f, (list, tuple)) or len(f) < 8:
+            continue
+        if not _finite(f[2], f[3], f[4], f[6]):
+            continue
+        if int(f[6]) <= 0:
+            continue
+        fleets.append([f[0], int(f[1]), float(f[2]), float(f[3]), float(f[4]),
+                       f[5], int(f[6]), f[7]])
+    av = obs.get("angular_velocity", 0.035)
+    if not _finite(av):
+        av = 0.035
+    return planets, fleets, float(av)
+
+
 def fleet_speed(ships):
-    """Engine: speed = 1 + (max-1) * (ln(n)/ln(1000))**1.5, capped."""
     n = int(ships)
     if n <= 1:
         return 1.0
@@ -62,7 +111,6 @@ def fleet_speed(ships):
 
 
 def seg_point_dist2(px, py, ax, ay, bx, by):
-    """Squared distance from a point to a segment."""
     dx = bx - ax
     dy = by - ay
     l2 = dx * dx + dy * dy
@@ -86,11 +134,6 @@ def sun_path_clear(ax, ay, bx, by):
 
 
 def swept_hit(ax, ay, bx, by, p0x, p0y, p1x, p1y, r):
-    """Continuous swept-pair collision -- reproduced from the interpreter.
-
-    True iff a fleet moving A->B and a planet moving P0->P1 come within r of
-    each other for some t in [0, 1].
-    """
     d0x = ax - p0x
     d0y = ay - p0y
     dvx = (bx - ax) - (p1x - p0x)
@@ -111,23 +154,16 @@ def swept_hit(ax, ay, bx, by, p0x, p0y, p1x, p1y, r):
 
 
 class World:
-    """Per-turn precomputation shared by every planner."""
-
-    def __init__(self, obs, me):
+    def __init__(self, planets, fleets, av, me):
         self.me = me
-        self.step = obs.get("step", 0)
-        self.av = obs.get("angular_velocity", 0.035)
-        self.planets = obs.get("planets", []) or []
-        self.fleets = obs.get("fleets", []) or []
+        self.av = av
+        self.planets = planets
+        self.fleets = fleets
         self.n = len(self.planets)
         self.idx = {p[0]: i for i, p in enumerate(self.planets)}
-
-        # Scale planning depth to the board so a busy turn cannot blow the
-        # harness' per-turn timeout on slow or contended hardware.
         load = max(1, len(self.fleets)) * max(1, self.n)
         h = WORK_BUDGET // load
         self.H = max(HORIZON_MIN, min(HORIZON, h))
-
         self.radius = [p[4] for p in self.planets]
         self.orb_r = []
         self.orb_a = []
@@ -138,18 +174,11 @@ class World:
             r = math.sqrt(dx * dx + dy * dy)
             self.orb_r.append(r)
             self.orb_a.append(math.atan2(dy, dx))
-            # The rotation test is radius-based and rotation-invariant, so the
-            # observed position serves as well as the initial one.
             self.rotates.append(r + p[4] < ROT_LIMIT)
-
         self._build_positions()
         self._k_cache = {}
 
     def _build_positions(self):
-        """PX[t][i], PY[t][i] = position of planet i, t ticks from now.
-
-        Advanced by complex rotor multiplication -- no trig in the inner loop.
-        """
         n = self.n
         w = complex(math.cos(self.av), math.sin(self.av))
         cur = [complex(p[2] - C, p[3] - C) for p in self.planets]
@@ -163,14 +192,7 @@ class World:
         self.PX = PX
         self.PY = PY
 
-    # -- kinematics --------------------------------------------------------
     def intercept(self, sx, sy, r_src, j, v):
-        """Kinematic root-finder: damped fixed point on continuous flight time.
-
-        Returns (k, aim_x, aim_y), k being the exact tick the fleet lands.
-        Damping kills the two-cycle oscillation an integer fixed point falls
-        into when the target straddles a ceil() boundary.
-        """
         rt = self.radius[j]
         slack = r_src + LAUNCH_OFFSET + rt
         if not self.rotates[j]:
@@ -178,7 +200,6 @@ class World:
             ty = self.PY[0][j]
             d = math.hypot(tx - sx, ty - sy)
             return max(1, int(math.ceil((d - slack) / v))), tx, ty
-
         R = self.orb_r[j]
         a0 = self.orb_a[j]
         av = self.av
@@ -201,7 +222,6 @@ class World:
         return k, x, y
 
     def arrival(self, i, j, ships):
-        """Cached (k, aim_x, aim_y) for planet i striking planet j."""
         v = fleet_speed(ships)
         key = (i, j, int(v * 20.0))
         got = self._k_cache.get(key)
@@ -212,13 +232,6 @@ class World:
         return got
 
     def simulate_launch(self, i, ships, aim_x, aim_y):
-        """Replay a prospective launch through engine rules.
-
-        Returns (hit_index, tick) or (None, None).  This is the gate that
-        catches fleets absorbed by a third planet, killed by the Sun, or flung
-        off the board -- the engine stops a fleet at the FIRST planet its swept
-        segment touches, iterating the planet list in order.
-        """
         p = self.planets[i]
         ang = math.atan2(aim_y - p[3], aim_x - p[2])
         ca = math.cos(ang)
@@ -256,17 +269,13 @@ class World:
             cy = ny
         return None, None
 
-    # -- predictive state --------------------------------------------------
     def simulate_arrivals(self):
-        """March every in-flight fleet forward; record where and when it lands."""
         n = self.n
         rad = self.radius
         orb = self.orb_r
         arrivals = [[] for _ in range(n)]
         for f in self.fleets:
             ships = f[6]
-            if ships <= 0:
-                continue
             v = fleet_speed(ships)
             ang = f[4]
             vx = v * math.cos(ang)
@@ -305,11 +314,6 @@ class World:
         return arrivals
 
     def project(self, arrivals):
-        """Forward-simulate owner/garrison per planet over the horizon.
-
-        Mirrors interpreter ordering: production first, then combat, with all
-        fleets of one player on a tick SUMMED before the top-two subtraction.
-        """
         owners = []
         ships = []
         for i, p in enumerate(self.planets):
@@ -352,12 +356,27 @@ class World:
         return owners, ships
 
 
-def build_threat_matrix(world, owners, ships):
-    """Predictive state simulation -> {planet_index: (critical_tick, deficit)}.
+def aim_candidates(world, i, j, ships):
+    p = world.planets[i]
+    k, ax, ay = world.arrival(i, j, ships)
+    out = []
+    if sun_path_clear(p[2], p[3], ax, ay):
+        out.append((ax, ay))
+    dx = ax - p[2]
+    dy = ay - p[3]
+    D = math.hypot(dx, dy)
+    if D <= 1e-9:
+        return out
+    base = math.atan2(dy, dx)
+    for dth in AIM_OFFSETS:
+        cx = p[2] + D * math.cos(base + dth)
+        cy = p[3] + D * math.sin(base + dth)
+        if sun_path_clear(p[2], p[3], cx, cy):
+            out.append((cx, cy))
+    return out
 
-    Semantics preserved from the original: the first tick at which a planet we
-    own changes hands, and how many extra ships would have held it.
-    """
+
+def build_threat_matrix(world, owners, ships):
     compromised = {}
     me = world.me
     for i, p in enumerate(world.planets):
@@ -372,12 +391,6 @@ def build_threat_matrix(world, owners, ships):
 
 
 def get_best_relay(world, i, j, ships, friendly):
-    """Graph-theory relay routing around the Sun, with thermodynamic delay.
-
-    Restricted to planets WE own: a fleet landing anywhere else fights instead
-    of relaying, so only a friendly node is a real waypoint.  Cost includes the
-    wait for that node to regenerate launch energy.
-    """
     p = world.planets[i]
     best = None
     best_t = float("inf")
@@ -402,25 +415,11 @@ def get_best_relay(world, i, j, ships, friendly):
 
 
 class Commander:
-    """Holds Time-on-Target plans across turns.
-
-    A plan is {target planet id -> {"arrive": absolute step, "alloc":
-    {source planet id: ships}, "sent": {source planet id}}}.  Storing the
-    ABSOLUTE arrival step is what keeps a staggered strike coherent: fleets
-    already in flight are never orphaned by the next turn's re-planning.
-    """
-
     def __init__(self):
         self.plans = {}
-        # Own clock.  obs["step"] is NOT reliable: the harness assigns
-        # observation.step to player 0 only (run_match.py), so player 1 sees
-        # step == 0 for the whole match.  We are called exactly once per turn,
-        # so counting calls is exact for both seats.
         self.turn = 0
 
-    # -- helpers -----------------------------------------------------------
     def _prune(self, world, owners, step):
-        """Drop plans that are finished, impossible, or no longer worthwhile."""
         me = world.me
         for tid in list(self.plans.keys()):
             pl = self.plans[tid]
@@ -428,16 +427,13 @@ class Commander:
             if j is None or pl["arrive"] <= step:
                 del self.plans[tid]
                 continue
-            # An unstarted plan that has gone stale is capital left idle.
             if not pl["sent"] and step - pl["opened"] > PLAN_STALE:
                 del self.plans[tid]
                 continue
-            # Target already ours (or will be) at the strike tick: stand down.
             rem = pl["arrive"] - step
             if rem <= world.H and owners[j][rem] == me and not pl["sent"]:
                 del self.plans[tid]
                 continue
-            # Contributors that are no longer ours cannot deliver.
             for sid in list(pl["alloc"].keys()):
                 si = world.idx.get(sid)
                 if si is None or world.planets[si][1] != me:
@@ -447,11 +443,12 @@ class Commander:
                 del self.plans[tid]
 
     def act(self, obs, deadline):
-        me = obs["player"]
-        world = World(obs, me)
-        n = world.n
-        if n == 0:
+        me = obs.get("player", 0)
+        planets_in, fleets_in, av = sanitize(obs)
+        if not planets_in:
             return []
+        world = World(planets_in, fleets_in, av, me)
+        n = world.n
         planets = world.planets
         step = self.turn
         self.turn += 1
@@ -472,6 +469,12 @@ class Commander:
 
         enemy_ids = [i for i in range(n) if planets[i][1] not in (me, -1)]
 
+        planet_diff = len(mine) - len(enemy_ids)
+        behind = planet_diff < 0
+        urgent = planet_diff <= DIFF_URGENT
+        keep_scale = DIFF_KEEP_RELAX if urgent else (0.65 if behind else 1.0)
+        expand_bonus = DIFF_EXPAND_BONUS if behind else 0.0
+
         enemy_dist = {}
         for i in mine:
             p = planets[i]
@@ -483,7 +486,6 @@ class Commander:
                     best = d
             enemy_dist[i] = best
 
-        # Garrison we refuse to spend.
         keep = {}
         for i in mine:
             inc_e = 0
@@ -497,9 +499,11 @@ class Commander:
             k = BASE_KEEP + max(0, inc_e - inc_f)
             if enemy_dist[i] < FRONT_DIST:
                 k += FRONT_KEEP
-            keep[i] = min(k, planets[i][5])
+            if keep_scale < 1.0:
+                spec = k - max(0, inc_e - inc_f)
+                k = max(0, inc_e - inc_f) + spec * keep_scale
+            keep[i] = min(int(k), planets[i][5])
 
-        # Ships already promised to open ToT plans.
         reserved = {i: 0 for i in mine}
         for pl in self.plans.values():
             for sid, cnt in pl["alloc"].items():
@@ -508,12 +512,34 @@ class Commander:
                 si = world.idx.get(sid)
                 if si in reserved:
                     reserved[si] += cnt
+        for i in mine:
+            spendable = max(0, v_ships[i] - keep[i])
+            if reserved[i] > spendable:
+                reserved[i] = spendable
 
         def free(i):
             return v_ships[i] - keep[i] - reserved.get(i, 0)
 
+        _recovery_budget = [RECOVERY_BUDGET]
+
+        def clean_shot(i, j, ships, want_tick=None, max_tick=None):
+            cands = aim_candidates(world, i, j, ships)
+            for idx, (cx, cy) in enumerate(cands):
+                if idx > 0:
+                    if _recovery_budget[0] <= 0:
+                        return None
+                    _recovery_budget[0] -= 1
+                hit, tick = world.simulate_launch(i, ships, cx, cy)
+                if hit != j:
+                    continue
+                if want_tick is not None and tick != want_tick:
+                    continue
+                if max_tick is not None and tick > max_tick:
+                    continue
+                return cx, cy, tick
+            return None
+
         def commit(i, aim_x, aim_y, ships):
-            """Gate a launch through engine rules, then record it."""
             ships = int(ships)
             if ships < 1 or ships > v_ships[i] or v_energy[i] < LAUNCH_COST:
                 return False
@@ -526,9 +552,6 @@ class Commander:
             launched.add(i)
             return True
 
-        # --------------------------------------------------------------
-        # PHASE 1 -- Defence, allocated before any offensive ship is spent.
-        # --------------------------------------------------------------
         for j, (crit, deficit) in sorted(compromised.items(), key=lambda kv: kv[1][0]):
             need = deficit
             helpers = []
@@ -550,23 +573,24 @@ class Commander:
                     continue
                 k2, ax2, ay2 = world.arrival(i, j, send)
                 if k2 > crit:
-                    send = avail                      # buy speed with mass
+                    send = avail
                     k2, ax2, ay2 = world.arrival(i, j, send)
                     if k2 > crit:
                         continue
-                hit, tick = world.simulate_launch(i, send, ax2, ay2)
-                if hit != j or tick > crit:
+                shot = clean_shot(i, j, send, max_tick=crit)
+                if shot is None:
                     continue
+                ax2, ay2, _ = shot
                 if commit(i, ax2, ay2, send):
                     need -= send
-                    reserved[i] = 0                   # emergency overrides plans
+                    reserved[i] = 0
 
         if time.monotonic() > deadline:
             return actions
 
-        # --------------------------------------------------------------
-        # PHASE 2a -- Execute due launches of existing ToT plans.
-        # --------------------------------------------------------------
+        if time.monotonic() > deadline:
+            return actions
+
         for tid in list(self.plans.keys()):
             pl = self.plans[tid]
             j = world.idx.get(tid)
@@ -590,9 +614,8 @@ class Commander:
                     continue
                 k, ax, ay = world.arrival(i, j, want)
                 if k < rem:
-                    continue                          # too early; wait a turn
+                    continue
                 if k > rem:
-                    # Running late -- spend mass to buy the speed back.
                     boost = min(v_ships[i] - keep[i], v_ships[i])
                     if boost > want:
                         k2, ax2, ay2 = world.arrival(i, j, boost)
@@ -600,9 +623,10 @@ class Commander:
                             want, k, ax, ay = boost, k2, ax2, ay2
                     if k > rem:
                         continue
-                hit, tick = world.simulate_launch(i, want, ax, ay)
-                if hit != j or tick != rem:
+                shot = clean_shot(i, j, want, want_tick=rem)
+                if shot is None:
                     continue
+                ax, ay, _ = shot
                 if commit(i, ax, ay, want):
                     pl["sent"].add(sid)
                     reserved[i] = max(0, reserved.get(i, 0) - pl["alloc"][sid])
@@ -610,9 +634,6 @@ class Commander:
         if time.monotonic() > deadline:
             return actions
 
-        # --------------------------------------------------------------
-        # PHASE 2b -- Open new Time-on-Target plans.
-        # --------------------------------------------------------------
         my_cx = sum(planets[i][2] for i in mine) / len(mine)
         my_cy = sum(planets[i][3] for i in mine) / len(mine)
         shortlist = []
@@ -621,27 +642,28 @@ class Commander:
                 continue
             p = planets[j]
             d = math.hypot(p[2] - my_cx, p[3] - my_cy)
-            val = p[6] * PROD_W + (NEUTRAL_BONUS if p[1] == -1 else ENEMY_BONUS)
+            val = ((p[6] ** PROD_EXP) * PROD_W +
+                   (NEUTRAL_BONUS + expand_bonus if p[1] == -1 else ENEMY_BONUS))
             inbound = any(o == me for (_, _, o) in arrivals[j])
-            shortlist.append((-(val - d * 0.9 - p[5] * 0.30 +
+            cheapest = p[5]
+            for t in range(1, world.H + 1):
+                if owners[j][t] == me:
+                    break
+                g = proj[j][t]
+                if g < cheapest:
+                    cheapest = g
+            shortlist.append((-(val - d * 0.9 - cheapest * 0.30 +
                                 (COMMIT_BONUS if inbound else 0.0)), j))
         shortlist.sort()
         shortlist = [j for _, j in shortlist[:MAX_TARGETS]]
 
         def demand(j, T):
-            """Ships needed to take planet j on tick T, given all in flight."""
             if owners[j][T] == me:
                 return -1
             g = proj[j][T]
             return g + 2 + int(g * 0.02)
 
         def plan_target(j, avail_src):
-            """Pool planets so their fleets land on planet j together.
-
-            Every contributor must already HOLD its allocated ships: a strike
-            is never opened on the promise of future production, which is what
-            leaves a lone fleet stranded against a full garrison.
-            """
             cands = []
             for i in avail_src:
                 cap = free(i)
@@ -650,7 +672,7 @@ class Commander:
                 k, ax, ay = world.arrival(i, j, cap)
                 if k > world.H - 4:
                     continue
-                if not sun_path_clear(planets[i][2], planets[i][3], ax, ay):
+                if not aim_candidates(world, i, j, cap):
                     continue
                 cands.append((k, i))
             if not cands:
@@ -668,6 +690,7 @@ class Commander:
                     need = demand(j, T)
                     if need < 0:
                         return None
+                    static_tgt = planets[j][1] == -1
                     supply = []
                     total = 0
                     for i in subset:
@@ -676,10 +699,12 @@ class Commander:
                             continue
                         k, _, _ = world.arrival(i, j, cap)
                         if k > T:
-                            continue                  # cannot make this tick
+                            continue
                         d = T - k
                         if v_energy[i] + planets[i][9] * d < LAUNCH_COST:
                             continue
+                        if static_tgt and d > 0:
+                            cap += planets[i][6] * d
                         supply.append((cap, i))
                         total += cap
                     if total >= need * CAPACITY_SAFETY:
@@ -694,7 +719,7 @@ class Commander:
                                 take = int(min(cap, MIN_FLEET))
                             k2, _, _ = world.arrival(i, j, take)
                             if k2 > T:
-                                take = int(cap)       # buy speed with mass
+                                take = int(cap)
                                 k2, _, _ = world.arrival(i, j, take)
                                 if k2 > T:
                                     continue
@@ -702,8 +727,9 @@ class Commander:
                             rem -= take
                         if rem <= 0 and alloc:
                             p = planets[j]
-                            val = p[6] * PROD_W + (NEUTRAL_BONUS if p[1] == -1
-                                                   else ENEMY_BONUS)
+                            val = ((p[6] ** PROD_EXP) * PROD_W +
+                                   (NEUTRAL_BONUS + expand_bonus if p[1] == -1
+                                    else ENEMY_BONUS))
                             if any(o == me for (_, _, o) in arrivals[j]):
                                 val += COMMIT_BONUS
                             score = val / (need + 12.0) * 100.0 - T * TIME_W
@@ -744,12 +770,7 @@ class Commander:
                 if si in reserved:
                     reserved[si] += cnt
             opened += 1
-            if _dbg is not None and len(alloc) > 1:
-                _dbg.write("P%d T%-4d PLAN target=%d arrive=%d pooled=%d alloc=%s\n"
-                           % (me, step, planets[best_j][0], step + T, len(alloc),
-                              dict(alloc)))
 
-        # Fire whichever contributors of the freshly opened plans are due now.
         for tid, pl in self.plans.items():
             j = world.idx.get(tid)
             if j is None:
@@ -769,74 +790,148 @@ class Commander:
                 k, ax, ay = world.arrival(i, j, want)
                 if k != rem:
                     continue
-                hit, tick = world.simulate_launch(i, want, ax, ay)
-                if hit != j or tick != rem:
+                shot = clean_shot(i, j, want, want_tick=rem)
+                if shot is None:
                     continue
+                ax, ay, _ = shot
                 if commit(i, ax, ay, want):
                     pl["sent"].add(sid)
                     reserved[i] = max(0, reserved.get(i, 0) - pl["alloc"][sid])
 
-        # --------------------------------------------------------------
-        # PHASE 3 -- Economic hub logistics.
-        # --------------------------------------------------------------
-        if mine and enemy_ids and time.monotonic() <= deadline:
-            front = min(enemy_dist.values())
-            staging = [i for i in mine if enemy_dist[i] <= front * 1.15]
+        claimed = set()
+
+        def svt_solve(i, j, budget):
+            s_try = budget
+            for _ in range(5):
+                k, ax, ay = world.arrival(i, j, s_try)
+                if k > world.H - 4:
+                    return None
+                nd = demand(j, k)
+                if nd < 0 or nd > budget:
+                    return None
+                if nd == s_try:
+                    return nd, k
+                s_try = nd
+            return (s_try, k) if s_try <= budget else None
+
+        for i in (mine if IMMEDIATE_CAPTURE else ()):
+            if i in launched or v_energy[i] < LAUNCH_COST:
+                continue
+            skip = set()
+            for _ in range(MULTI_LAUNCH):
+                if v_energy[i] < LAUNCH_COST:
+                    break
+                avail_now = free(i)
+                if avail_now < MIN_FLEET:
+                    break
+                best = None
+                for j in shortlist:
+                    if j in claimed or j in skip or planets[j][0] in self.plans:
+                        continue
+                    sol = svt_solve(i, j, avail_now)
+                    if sol is None:
+                        continue
+                    ships, k = sol
+                    if ships < MIN_FLEET:
+                        ships = MIN_FLEET
+                    q = planets[j]
+                    val = ((q[6] ** PROD_EXP) * PROD_W +
+                           (NEUTRAL_BONUS + expand_bonus if q[1] == -1 else ENEMY_BONUS))
+                    score = val / (ships + 8.0) * 100.0 * EXPAND_W - k * TIME_W
+                    if best is None or score > best[0]:
+                        best = (score, j, ships, k)
+                if best is None:
+                    break
+                _, j, ships, k = best
+                shot = clean_shot(i, j, ships, want_tick=k)
+                if shot is None:
+                    skip.add(j)
+                    continue
+                ax, ay, tick = shot
+                if not commit(i, ax, ay, ships):
+                    break
+                claimed.add(j)
+
+        if time.monotonic() > deadline:
+            return actions
+
+        if HUB_LOGISTICS and enemy_ids and time.monotonic() <= deadline:
+
+            def tgt_val(j):
+                q = planets[j]
+                return (q[6] ** PROD_EXP) * PROD_W + (NEUTRAL_BONUS if q[1] == -1 else ENEMY_BONUS)
+
+            lane = {}
+            for i in mine:
+                acc = 0.0
+                cap = max(free(i), MIN_FLEET)
+                for j in shortlist:
+                    k, ax, ay = world.arrival(i, j, cap)
+                    if k > world.H - 4:
+                        continue
+                    if not sun_path_clear(planets[i][2], planets[i][3], ax, ay):
+                        continue
+                    acc += tgt_val(j) / (k + 6.0)
+                lane[i] = acc
+
             for i in mine:
                 if i in launched or v_energy[i] < LAUNCH_COST or i in compromised:
                     continue
                 surplus = free(i)
                 if surplus < HUB_MIN_FLEET:
                     continue
-                if enemy_dist[i] < front * HUB_GAIN:
-                    continue                          # already frontline; hold
-                best_dst = None
-                best_k = None
-                for j in staging:
-                    if j == i or owners[j][min(world.H, 12)] != me:
+                bar = lane[i] * LANE_GAIN
+                best = None
+                for j in mine:
+                    if j == i or lane[j] < bar:
+                        continue
+                    if owners[j][min(world.H, 12)] != me:
                         continue
                     k, ax, ay = world.arrival(i, j, surplus)
                     if k > world.H - 4:
                         continue
-                    if not sun_path_clear(planets[i][2], planets[i][3], ax, ay):
-                        continue
-                    if best_k is None or k < best_k:
-                        best_k = k
-                        best_dst = (j, ax, ay)
-                if best_dst is None:
+                    sc = lane[j] - k * LANE_TIME_W
+                    if best is None or sc > best[0]:
+                        direct = sun_path_clear(planets[i][2], planets[i][3], ax, ay)
+                        best = (sc, j, ax, ay, direct)
+                if best is None:
                     continue
-                j, ax, ay = best_dst
-                hit, _ = world.simulate_launch(i, surplus, ax, ay)
-                if hit == j:
-                    commit(i, ax, ay, surplus)
+                _, j, ax, ay, direct = best
+                if direct:
+                    hit, _ = world.simulate_launch(i, surplus, ax, ay)
+                    if hit == j and commit(i, ax, ay, surplus):
+                        continue
+                rel = get_best_relay(world, i, j, surplus, mine)
+                if rel:
+                    r, rx, ry = rel
+                    rhit, _ = world.simulate_launch(i, surplus, rx, ry)
+                    if rhit == r:
+                        commit(i, rx, ry, surplus)
 
-        if _dbg is not None:
-            res_tot = sum(reserved.values())
-            stale = sum(1 for pl in self.plans.values() if not pl["sent"])
-            _dbg.write(
-                "P%d S%-4d mine=%-3d plans=%-2d unstarted=%d reserved=%-6d "
-                "acts=%d ships=%d\n"
-                % (me, step, len(mine), len(self.plans), stale, res_tot,
-                   len(actions), sum(v_ships.values())))
         return actions
 
 
 def main():
     cmd = Commander()
     for line in sys.stdin:
-        line = line.strip()
-        if not line:
-            continue
-        deadline = time.monotonic() + TIME_BUDGET
         try:
+            line = line.strip()
+            if not line:
+                continue
+            deadline = time.monotonic() + TIME_BUDGET
             obs = json.loads(line)
+            if not isinstance(obs, dict):
+                raise ValueError("observation is not a JSON object")
             out = cmd.act(obs, deadline)
+            if not isinstance(out, list):
+                out = []
         except Exception:
-            sys.stderr.write(traceback.format_exc())
-            sys.stderr.flush()
             out = []
-        sys.stdout.write(json.dumps(out) + "\n")
-        sys.stdout.flush()
+        try:
+            sys.stdout.write(json.dumps(out) + "\n")
+            sys.stdout.flush()
+        except Exception:
+            return
 
 
 if __name__ == "__main__":

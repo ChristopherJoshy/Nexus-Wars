@@ -64,8 +64,10 @@ services:
       MINIO_BUCKET: nexus-replays
       USE_NSJAIL: "1"
       NSJAIL_CFG: /etc/nsjail/nsjail.cfg
-      MAX_CONCURRENT: "4"
+      MAX_CONCURRENT: "3"
       POLL_INTERVAL: "1.0"
+      ACT_TIMEOUT: "2.0"
+      RUN_TIMEOUT: "650"
       FIREBASE_SERVICE_ACCOUNT_PATH: /etc/firebase/service-account.json
     volumes:
       - ./nsjail.cfg:/etc/nsjail/nsjail.cfg:ro

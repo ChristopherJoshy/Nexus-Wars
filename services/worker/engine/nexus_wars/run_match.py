@@ -34,7 +34,7 @@ from nexus_wars import interpreter, Planet, Fleet, BOARD_SIZE, CENTER, SUN_RADIU
 DEFAULT_CONFIG = {
     "episodeSteps": 500,
     "actTimeout": 1.0,
-    "runTimeout": 360,
+    "runTimeout": 510,
     "shipSpeed": 6.0,
     "energyCap": 100,
     "energyRegen": 5,
@@ -108,26 +108,20 @@ class SubprocessRunner:
     def __init__(self, command, act_timeout=0.15, sandbox_cmd=None):
         self.act_timeout = act_timeout
         self.dead = False
+        self.is_first_turn = True
         self.consecutive_timeouts = 0
+        self._slow = False  # once True, bot gets extra time on all turns
+        self._max_adaptive = 3.0
         launch = list(sandbox_cmd) if sandbox_cmd else []
         launch += list(command)
         self.proc = subprocess.Popen(
             launch,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
             text=True,
             bufsize=1,
         )
-        def _log_stderr():
-            try:
-                for line in self.proc.stderr:
-                    sys.stdout.write(f"BOT STDERR: {line}")
-                    sys.stdout.flush()
-            except Exception:
-                pass
-        t = threading.Thread(target=_log_stderr, daemon=True)
-        t.start()
 
         self.q = queue.Queue()
         def _reader_loop():
@@ -152,8 +146,13 @@ class SubprocessRunner:
             self.dead = True
             return []
 
-        timeout = 15.0 if getattr(self, 'is_first_turn', True) else self.act_timeout
-        self.is_first_turn = False
+        if self.is_first_turn:
+            timeout = 2.0
+            self.is_first_turn = False
+        elif self._slow:
+            timeout = self._max_adaptive
+        else:
+            timeout = self.act_timeout
         
         start_time = time.time()
         while time.time() - start_time < timeout:
@@ -188,6 +187,7 @@ class SubprocessRunner:
 
         # Timed out this turn
         self.consecutive_timeouts += 1
+        self._slow = True
         sys.stdout.write(f"BOT TURN TIMEOUT: {self.consecutive_timeouts}/10\n")
         sys.stdout.flush()
         if self.consecutive_timeouts >= 10:

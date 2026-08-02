@@ -33,11 +33,11 @@ def test_dynamic_params_throughput():
 
 
 def test_backpressure_throttling():
-    """Verify that enqueue_matches returns 0 if pending queue is full (>= 8 pending jobs)."""
+    """Verify that enqueue_matches returns 0 if pending queue is full (>= 50 pending jobs)."""
     with mock.patch("matchmaker._acquire_lock"), \
          mock.patch("matchmaker._release_lock"), \
          mock.patch("matchmaker._reap_stuck_jobs"), \
-         mock.patch("matchmaker._get_pending_match_count", return_value=10):
+         mock.patch("matchmaker._get_pending_match_count", return_value=51):
         
         mock_conn = mock.MagicMock()
         created = enqueue_matches(mock_conn)

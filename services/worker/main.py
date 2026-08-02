@@ -133,7 +133,7 @@ def main():
     wait_for_db()
     run_migrations()
     sem = threading.Semaphore(MAX_CONCURRENT)
-    matchmake_every = max(1, int(30 / POLL_INTERVAL))  # ~every 30s
+    matchmake_every = max(1, int(10 / POLL_INTERVAL))  # ~every 10s
     ticks = matchmake_every - 1  # run matchmaker immediately on first tick
     with ThreadPoolExecutor(max_workers=MAX_CONCURRENT) as ex:
         print(f"worker {WORKER_ID} started (max_concurrent={MAX_CONCURRENT})")
