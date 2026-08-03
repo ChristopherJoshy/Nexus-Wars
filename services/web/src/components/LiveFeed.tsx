@@ -34,7 +34,7 @@ export default function LiveFeed() {
   useEffect(() => {
     const fetchFeed = async () => {
       try {
-        const res = await fetch("https://16-170-239-106.sslip.io/nexus-replays/live_feed.json?t=" + Date.now());
+        const res = await fetch("/api/live_feed?t=" + Date.now());
         if (!res.ok) return;
         const data = await res.json();
         
