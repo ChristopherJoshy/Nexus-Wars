@@ -97,40 +97,71 @@ function GameHistoryContent() {
   const [speedMultiplier, setSpeedMultiplier] = useState<0.5 | 1 | 2 | 4>(1);
   const [copied, setCopied] = useState(false);
   const [downloadingZip, setDownloadingZip] = useState(false);
+  const [downloadProgress, setDownloadProgress] = useState("");
 
   const handleDownloadAll = async () => {
-    if (matchList.length === 0) return;
+    if (matchList.length === 0 || downloadingZip) return;
     setDownloadingZip(true);
+    setDownloadProgress("0%");
+    
     try {
       const zip = new JSZip();
       
-      const downloadPromises = matchList.map(async (m) => {
-        try {
-          const res = await fetch(`/api/replays/${m.id}`);
-          if (res.ok) {
-            const data = await res.json();
-            if (!data.error) {
-              zip.file(`replay_${m.id}.json`, JSON.stringify(data, null, 2));
+      // Cap at 50 most recent replays to prevent memory exhaustion & browser crashes
+      const targets = matchList.slice(0, 50);
+      const total = targets.length;
+      let completed = 0;
+
+      // Batch requests (5 at a time) to prevent network socket / serverless function exhaustion
+      const batchSize = 5;
+      for (let i = 0; i < targets.length; i += batchSize) {
+        const batch = targets.slice(i, i + batchSize);
+        
+        await Promise.all(
+          batch.map(async (m) => {
+            try {
+              let data = clientCache.getReplay(m.id);
+              if (!data) {
+                const res = await fetch(`/api/replays/${m.id}`);
+                if (res.ok) {
+                  data = await res.json();
+                  if (data && !data.error) {
+                    clientCache.setReplay(m.id, data);
+                  }
+                }
+              }
+              if (data && !data.error) {
+                zip.file(`replay_${m.id}.json`, JSON.stringify(data));
+              }
+            } catch (e) {
+              console.error(`Failed to fetch replay ${m.id}`, e);
+            } finally {
+              completed++;
+              setDownloadProgress(`${Math.round((completed / total) * 100)}%`);
             }
-          }
-        } catch (e) {
-          console.error(`Failed to fetch replay ${m.id}`, e);
-        }
+          })
+        );
+      }
+      
+      const blob = await zip.generateAsync({
+        type: "blob",
+        compression: "DEFLATE",
+        compressionOptions: { level: 6 }
       });
-      
-      await Promise.all(downloadPromises);
-      
-      const blob = await zip.generateAsync({ type: "blob" });
+
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
       a.download = `nexus-wars-replays-${submissionId || teamId || "all"}.zip`;
+      document.body.appendChild(a);
       a.click();
+      document.body.removeChild(a);
       URL.revokeObjectURL(url);
     } catch (e) {
       console.error("Failed to generate zip", e);
     } finally {
       setDownloadingZip(false);
+      setDownloadProgress("");
     }
   };
 
@@ -518,11 +549,16 @@ function GameHistoryContent() {
               title="Download all replays as ZIP"
             >
               {downloadingZip ? (
-                <RotateCcw className="w-3 h-3 animate-spin" />
+                <>
+                  <RotateCcw className="w-3 h-3 animate-spin" />
+                  ZIP {downloadProgress}
+                </>
               ) : (
-                <Download className="w-3 h-3" />
+                <>
+                  <Download className="w-3 h-3" />
+                  ZIP
+                </>
               )}
-              ZIP
             </Button>
             <Button
               variant="outline"
