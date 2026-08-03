@@ -28,10 +28,31 @@ type Toast = {
 
 export default function LiveFeed() {
   const [toasts, setToasts] = useState<Toast[]>([]);
+  const [enabled, setEnabled] = useState(true);
+  const [isMobile, setIsMobile] = useState(false);
   const knownEventsRef = useRef<Record<string, string>>({});
   const initialLoadRef = useRef(true);
 
   useEffect(() => {
+    const checkSettings = () => {
+      const stored = localStorage.getItem("nexus_live_feed_enabled");
+      setEnabled(stored !== "false");
+      setIsMobile(window.innerWidth < 768);
+    };
+
+    checkSettings();
+    window.addEventListener("nexus_live_feed_toggle", checkSettings);
+    window.addEventListener("resize", checkSettings);
+
+    return () => {
+      window.removeEventListener("nexus_live_feed_toggle", checkSettings);
+      window.removeEventListener("resize", checkSettings);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!enabled || isMobile) return;
+
     const fetchFeed = async () => {
       try {
         const res = await fetch("/api/live_feed?t=" + Date.now());
@@ -46,7 +67,6 @@ export default function LiveFeed() {
           const knownStatus = knownEventsRef.current[ev.id];
           
           if (initialLoadRef.current) {
-            // Just record it, don't toast on initial load
             knownEventsRef.current[ev.id] = ev.status;
           } else {
             if (!knownStatus && ev.status === "running") {
@@ -56,7 +76,6 @@ export default function LiveFeed() {
               newToasts.push({ toastId: Math.random().toString(), event: ev, type: "end" });
               knownEventsRef.current[ev.id] = ev.status;
             } else if (!knownStatus && ev.status === "finished") {
-              // Missed the start, just show the end
               newToasts.push({ toastId: Math.random().toString(), event: ev, type: "end" });
               knownEventsRef.current[ev.id] = ev.status;
             }
@@ -68,7 +87,6 @@ export default function LiveFeed() {
         if (newToasts.length > 0) {
           setToasts(prev => [...prev, ...newToasts]);
           
-          // Auto dismiss after 8 seconds
           newToasts.forEach(t => {
             setTimeout(() => {
               setToasts(prev => prev.filter(p => p.toastId !== t.toastId));
@@ -84,18 +102,20 @@ export default function LiveFeed() {
     fetchFeed();
     const interval = setInterval(fetchFeed, 5000);
     return () => clearInterval(interval);
-  }, []);
+  }, [enabled, isMobile]);
+
+  if (!enabled || isMobile) return null;
 
   return (
-    <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2 pointer-events-none hidden md:flex">
+    <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2.5 pointer-events-none hidden md:flex">
       <AnimatePresence>
         {toasts.slice(-3).map((toast) => (
           <motion.div
             key={toast.toastId}
-            initial={{ opacity: 0, x: 80, scale: 0.9 }}
-            animate={{ opacity: 1, x: 0, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.85, x: 40 }}
-            transition={{ type: "spring", stiffness: 350, damping: 26 }}
+            initial={{ opacity: 0, y: 30, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.9, y: 20 }}
+            transition={{ type: "spring", stiffness: 350, damping: 25 }}
             className="pointer-events-auto"
           >
             <ToastCard toast={toast} />
@@ -121,92 +141,76 @@ function ToastCard({ toast }: { toast: Toast }) {
     else bChange = `${Math.round(event.rating_change_b! || 0)}`;
   }
 
-  // Determine winners (Postgres enum uses 'a' and 'b')
+  // Postgres enum uses 'a' and 'b'
   const aWon = isEnd && (event.winner === "team_a" || event.winner === "a");
   const bWon = isEnd && (event.winner === "team_b" || event.winner === "b");
-  const aLost = isEnd && (event.winner === "team_b" || event.winner === "b");
-  const bLost = isEnd && (event.winner === "team_a" || event.winner === "a");
-
-  const titleText = isEnd ? "MATCH RESULT" : "MATCH STARTING";
-  const titleColor = isEnd ? "text-emerald-700 font-bold" : "text-amber-700 font-bold";
 
   return (
-    <div className="flex flex-col items-center drop-shadow-lg font-sans">
-      <div className={`text-[9px] tracking-[0.2em] uppercase mb-0.5 ${titleColor}`}>
-        {titleText}
+    <div className="w-80 bg-card border border-border rounded-lg shadow-2xl p-3 font-sans opacity-100 text-foreground bg-[#fffdf8]">
+      {/* Header Bar */}
+      <div className="flex items-center justify-between border-b border-border/70 pb-1.5 mb-2">
+        <span className="text-[10px] font-bold tracking-widest uppercase text-primary flex items-center gap-1">
+          {isEnd ? "⚡ MATCH RESULT" : "⚔️ MATCH STARTING"}
+        </span>
+        {isEnd && (
+          <span className="text-[10px] font-mono text-muted-foreground font-semibold bg-muted px-1.5 py-0.5 rounded border border-border/50">
+            {aChange} / {bChange}
+          </span>
+        )}
       </div>
-      
-      <div className="flex items-center h-12 bg-transparent">
-        
-        {/* LEFT WING */}
-        <div 
-          className={`relative h-full w-40 flex items-center justify-start pl-3 pr-2 overflow-hidden bg-slate-900 border border-slate-700/50 shadow-inner transition-all ${aLost ? 'opacity-40 grayscale' : ''}`}
-          style={{ clipPath: "polygon(0 0, 100% 0, 85% 100%, 0 100%)" }}
-        >
+
+      {/* Matchup */}
+      <div className="flex items-center justify-between gap-2">
+        {/* Team A */}
+        <div className={`flex items-center gap-2 flex-1 min-w-0 ${isEnd && !aWon ? "opacity-50" : ""}`}>
           {event.team_a_photo ? (
-            <div 
-              className="absolute inset-0 bg-cover bg-center" 
-              style={{ backgroundImage: `url(${event.team_a_photo})` }}
-            />
+            <img src={event.team_a_photo} alt="" className="w-7 h-7 rounded-full border border-border shrink-0 object-cover" />
           ) : (
-            <div className="absolute inset-0 bg-slate-800" />
+            <div className="w-7 h-7 rounded-full bg-primary/10 text-primary font-bold text-xs flex items-center justify-center border border-border shrink-0">
+              {event.team_a_name[0]?.toUpperCase()}
+            </div>
           )}
-          {/* Tint overlay for contrast */}
-          <div className="absolute inset-0 bg-gradient-to-r from-slate-950/85 via-slate-900/75 to-slate-950/85" />
-
-          <div className="relative z-10 flex flex-col items-start min-w-0 pr-2">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-1">
+              <span className={`text-xs truncate ${aWon ? "font-black text-primary" : "font-semibold text-foreground"}`}>
+                {event.team_a_name}
+              </span>
+            </div>
             {aWon && (
-              <span className="text-[8px] font-black text-amber-300 tracking-wider flex items-center gap-0.5 bg-amber-950/80 px-1 rounded border border-amber-500/40 leading-none mb-0.5">
+              <span className="inline-flex items-center gap-0.5 text-[9px] font-black text-primary leading-none uppercase bg-primary/10 px-1 py-0.5 rounded border border-primary/20 mt-0.5">
                 👑 WINNER
               </span>
             )}
-            <span className={`text-white truncate max-w-[85px] text-xs drop-shadow ${aWon ? 'font-black text-amber-200' : 'font-semibold'}`}>
-              {event.team_a_name}
-            </span>
           </div>
         </div>
 
-        {/* CENTER DIAMOND */}
-        <div 
-          className="relative h-[115%] w-18 flex flex-col items-center justify-center bg-emerald-800 text-amber-100 -mx-5 z-20 shadow-md border-x border-emerald-600/40"
-          style={{ clipPath: "polygon(20% 0, 100% 0, 80% 100%, 0 100%)" }}
-        >
-          <span className="font-black italic text-xs leading-none">VS</span>
-          {isEnd && (
-            <span className="text-[8.5px] font-extrabold text-amber-200 tracking-tighter mt-0.5">
-              {aChange}/{bChange}
-            </span>
-          )}
+        {/* VS Divider */}
+        <div className="px-2 py-1 rounded bg-muted border border-border text-[10px] font-mono font-black text-muted-foreground shrink-0">
+          VS
         </div>
 
-        {/* RIGHT WING */}
-        <div 
-          className={`relative h-full w-40 flex items-center justify-end pr-3 pl-2 overflow-hidden bg-slate-900 border border-slate-700/50 shadow-inner transition-all ${bLost ? 'opacity-40 grayscale' : ''}`}
-          style={{ clipPath: "polygon(15% 0, 100% 0, 100% 100%, 0 100%)" }}
-        >
-          {event.team_b_photo ? (
-            <div 
-              className="absolute inset-0 bg-cover bg-center" 
-              style={{ backgroundImage: `url(${event.team_b_photo})` }}
-            />
-          ) : (
-            <div className="absolute inset-0 bg-slate-800" />
-          )}
-          {/* Tint overlay for contrast */}
-          <div className="absolute inset-0 bg-gradient-to-l from-slate-950/85 via-slate-900/75 to-slate-950/85" />
-
-          <div className="relative z-10 flex flex-col items-end min-w-0 pl-2 text-right">
+        {/* Team B */}
+        <div className={`flex items-center justify-end gap-2 flex-1 min-w-0 text-right ${isEnd && !bWon ? "opacity-50" : ""}`}>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center justify-end gap-1">
+              <span className={`text-xs truncate ${bWon ? "font-black text-primary" : "font-semibold text-foreground"}`}>
+                {event.team_b_name}
+              </span>
+            </div>
             {bWon && (
-              <span className="text-[8px] font-black text-amber-300 tracking-wider flex items-center gap-0.5 bg-amber-950/80 px-1 rounded border border-amber-500/40 leading-none mb-0.5">
+              <span className="inline-flex items-center gap-0.5 text-[9px] font-black text-primary leading-none uppercase bg-primary/10 px-1 py-0.5 rounded border border-primary/20 mt-0.5">
                 👑 WINNER
               </span>
             )}
-            <span className={`text-white truncate max-w-[85px] text-xs drop-shadow ${bWon ? 'font-black text-amber-200' : 'font-semibold'}`}>
-              {event.team_b_name}
-            </span>
           </div>
+          {event.team_b_photo ? (
+            <img src={event.team_b_photo} alt="" className="w-7 h-7 rounded-full border border-border shrink-0 object-cover" />
+          ) : (
+            <div className="w-7 h-7 rounded-full bg-primary/10 text-primary font-bold text-xs flex items-center justify-center border border-border shrink-0">
+              {event.team_b_name[0]?.toUpperCase()}
+            </div>
+          )}
         </div>
-        
       </div>
     </div>
   );

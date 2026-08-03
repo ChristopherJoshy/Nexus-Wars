@@ -3,15 +3,23 @@
 import { useState, useRef, useEffect } from "react";
 import { useSession, signIn, signOut } from "@/lib/auth-client";
 import { Button } from "@/components/ui/button";
-import { LogOut, User, ChevronDown } from "lucide-react";
+import { LogOut, User, ChevronDown, Bell } from "lucide-react";
 
 export function TopBar() {
   const { data: session, isPending } = useSession();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [liveFeedEnabled, setLiveFeedEnabled] = useState(true);
   const menuRef = useRef<HTMLDivElement>(null);
 
   const userName = session?.user?.name || session?.user?.email || "User";
   const userEmail = session?.user?.email || "";
+
+  useEffect(() => {
+    const stored = localStorage.getItem("nexus_live_feed_enabled");
+    if (stored !== null) {
+      setLiveFeedEnabled(stored === "true");
+    }
+  }, []);
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -77,6 +85,26 @@ export function TopBar() {
                       {userEmail}
                     </div>
                   )}
+                </div>
+
+                <div className="p-1 border-b border-border">
+                  <button
+                    onClick={() => {
+                      const next = !liveFeedEnabled;
+                      setLiveFeedEnabled(next);
+                      localStorage.setItem("nexus_live_feed_enabled", String(next));
+                      window.dispatchEvent(new Event("nexus_live_feed_toggle"));
+                    }}
+                    className="w-full flex items-center justify-between px-3 py-2 text-xs text-foreground hover:bg-muted rounded-md transition-colors cursor-pointer font-medium"
+                  >
+                    <span className="flex items-center gap-2">
+                      <Bell className="w-3.5 h-3.5 text-primary" />
+                      Live Notifications
+                    </span>
+                    <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded font-bold ${liveFeedEnabled ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'}`}>
+                      {liveFeedEnabled ? "ON" : "OFF"}
+                    </span>
+                  </button>
                 </div>
 
                 <div className="p-1">
