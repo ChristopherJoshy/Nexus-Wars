@@ -121,12 +121,18 @@ function ToastCard({ toast }: { toast: Toast }) {
     else bChange = `${Math.round(event.rating_change_b! || 0)}`;
   }
 
+  // Determine winners
+  const aWon = isEnd && event.winner === "team_a";
+  const bWon = isEnd && event.winner === "team_b";
+  const aLost = isEnd && event.winner === "team_b";
+  const bLost = isEnd && event.winner === "team_a";
+
   const titleText = isEnd ? "MATCH RESULT" : "MATCH STARTING";
-  const titleColor = isEnd ? "text-emerald-400" : "text-amber-400";
+  const titleColor = isEnd ? "text-primary" : "text-muted-foreground";
 
   return (
-    <div className="flex flex-col items-center drop-shadow-2xl font-sans">
-      <div className={`text-[10px] tracking-[0.2em] font-bold uppercase mb-1 ${titleColor} drop-shadow-[0_0_8px_rgba(255,255,255,0.3)]`}>
+    <div className="flex flex-col items-center drop-shadow-md font-sans">
+      <div className={`text-[10px] tracking-[0.2em] font-bold uppercase mb-1 ${titleColor}`}>
         {titleText}
       </div>
       
@@ -134,29 +140,27 @@ function ToastCard({ toast }: { toast: Toast }) {
         
         {/* LEFT WING */}
         <div 
-          className="relative h-full w-40 flex items-center justify-center overflow-hidden bg-slate-900 border border-slate-700/50"
+          className={`relative h-full w-48 flex items-center justify-start pl-4 overflow-hidden bg-card transition-all ${aLost ? 'opacity-60 grayscale' : ''}`}
           style={{ clipPath: "polygon(0 0, 100% 0, 85% 100%, 0 100%)" }}
         >
-          {event.team_a_photo && (
-            <div 
-              className="absolute inset-0 bg-cover bg-center opacity-30 mix-blend-luminosity" 
-              style={{ backgroundImage: `url(${event.team_a_photo})` }}
-            />
+          {event.team_a_photo ? (
+            <img src={event.team_a_photo} alt="" className="w-8 h-8 rounded-full border border-border mr-2 shrink-0 object-cover" />
+          ) : (
+            <div className="w-8 h-8 rounded-full border border-border mr-2 shrink-0 bg-secondary" />
           )}
-          <div className="absolute inset-0 bg-gradient-to-r from-slate-900/80 to-transparent" />
-          <span className="relative z-10 font-bold text-white truncate max-w-[100px] pl-2 drop-shadow-md">
-            {event.team_a_name}
+          <span className={`relative z-10 text-foreground truncate max-w-[100px] ${aWon ? 'font-black' : 'font-semibold'}`}>
+            {aWon && "👑 "}{event.team_a_name}
           </span>
         </div>
 
         {/* CENTER DIAMOND */}
         <div 
-          className="relative h-[115%] w-24 flex flex-col items-center justify-center bg-gradient-to-br from-indigo-600 to-purple-800 -mx-6 z-10 border border-indigo-400/30 shadow-[0_0_15px_rgba(79,70,229,0.5)]"
+          className="relative h-[115%] w-24 flex flex-col items-center justify-center bg-primary text-primary-foreground -mx-6 z-10 shadow-md"
           style={{ clipPath: "polygon(20% 0, 100% 0, 80% 100%, 0 100%)" }}
         >
-          <span className="text-white font-black italic text-lg leading-tight mt-1">VS</span>
+          <span className="font-black italic text-lg leading-tight mt-1">VS</span>
           {isEnd && (
-            <span className="text-[10px] font-bold text-emerald-200 mt-0.5">
+            <span className="text-[10px] font-bold text-primary-foreground/90 mt-0.5">
               {aChange} / {bChange}
             </span>
           )}
@@ -164,19 +168,17 @@ function ToastCard({ toast }: { toast: Toast }) {
 
         {/* RIGHT WING */}
         <div 
-          className="relative h-full w-40 flex items-center justify-center overflow-hidden bg-slate-900 border border-slate-700/50"
+          className={`relative h-full w-48 flex items-center justify-end pr-4 overflow-hidden bg-card transition-all ${bLost ? 'opacity-60 grayscale' : ''}`}
           style={{ clipPath: "polygon(15% 0, 100% 0, 100% 100%, 0 100%)" }}
         >
-          {event.team_b_photo && (
-            <div 
-              className="absolute inset-0 bg-cover bg-center opacity-30 mix-blend-luminosity" 
-              style={{ backgroundImage: `url(${event.team_b_photo})` }}
-            />
-          )}
-          <div className="absolute inset-0 bg-gradient-to-l from-slate-900/80 to-transparent" />
-          <span className="relative z-10 font-bold text-white truncate max-w-[100px] pr-2 drop-shadow-md">
-            {event.team_b_name}
+          <span className={`relative z-10 text-foreground truncate max-w-[100px] text-right ${bWon ? 'font-black' : 'font-semibold'}`}>
+            {event.team_b_name}{bWon && " 👑"}
           </span>
+          {event.team_b_photo ? (
+            <img src={event.team_b_photo} alt="" className="w-8 h-8 rounded-full border border-border ml-2 shrink-0 object-cover" />
+          ) : (
+            <div className="w-8 h-8 rounded-full border border-border ml-2 shrink-0 bg-secondary" />
+          )}
         </div>
         
       </div>
