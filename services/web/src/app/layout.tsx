@@ -7,6 +7,7 @@ import { CompetitionHeader } from "@/components/layout/CompetitionHeader";
 import { CompetitionTabs } from "@/components/layout/CompetitionTabs";
 import { TopLoader } from "@/components/layout/TopLoader";
 import { AsciiLoader } from "@/components/layout/AsciiLoader";
+import LiveFeed from "@/components/LiveFeed";
 
 export const metadata: Metadata = {
   title: "Nexus Wars — AI Bot Programming Competition",
@@ -52,6 +53,7 @@ export default function RootLayout({
             {children}
           </main>
         </div>
+        <LiveFeed />
         <Analytics />
       </body>
     </html>
