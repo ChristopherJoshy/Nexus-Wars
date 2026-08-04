@@ -642,19 +642,23 @@ export default function SubmissionsPage() {
 
                     {/* Download Bot Button */}
                     <TableCell className="text-center">
-                      <button
-                        onClick={() => handleDownload(s.id, filename)}
-                        disabled={downloadingId === s.id}
-                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-muted hover:bg-blue-500/10 border border-border hover:border-blue-500/40 text-xs font-medium text-foreground hover:text-blue-500 transition-all cursor-pointer active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
-                        title={`Download ${filename}`}
-                      >
-                        {downloadingId === s.id ? (
-                          <Loader2 className="w-3 h-3 animate-spin" />
-                        ) : (
-                          <Download className="w-3 h-3" />
-                        )}
-                        <span>{downloadingId === s.id ? "…" : "Download"}</span>
-                      </button>
+                      {isRejected ? (
+                        <span className="text-muted-foreground/40 text-xs font-mono">—</span>
+                      ) : (
+                        <button
+                          onClick={() => handleDownload(s.id, filename)}
+                          disabled={downloadingId === s.id}
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-muted hover:bg-blue-500/10 border border-border hover:border-blue-500/40 text-xs font-medium text-foreground hover:text-blue-500 transition-all cursor-pointer active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                          title={`Download ${filename}`}
+                        >
+                          {downloadingId === s.id ? (
+                            <Loader2 className="w-3 h-3 animate-spin" />
+                          ) : (
+                            <Download className="w-3 h-3" />
+                          )}
+                          <span>{downloadingId === s.id ? "…" : "Download"}</span>
+                        </button>
+                      )}
                     </TableCell>
                   </TableRow>
                 );

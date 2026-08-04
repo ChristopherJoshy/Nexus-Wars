@@ -39,6 +39,12 @@ export async function GET(
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
+  // Block downloads for rejected/failed/errored submissions
+  const blockedStatuses = ["rejected", "failed", "errored", "error"];
+  if (blockedStatuses.includes(submission.status)) {
+    return NextResponse.json({ error: "This submission is not available for download" }, { status: 403 });
+  }
+
   const artifactKey = submission.artifactKey;
   if (!artifactKey) {
     return NextResponse.json({ error: "No artifact available" }, { status: 404 });
