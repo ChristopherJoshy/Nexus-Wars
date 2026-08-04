@@ -191,6 +191,10 @@ export default function MatchReplayPage({
         if (!res.ok) throw new Error("Replay fetch error");
         return res.json();
       })
+      .then((data: { url: string }) => {
+        if (!data.url) throw new Error("No presigned URL");
+        return fetch(data.url).then((r) => r.json());
+      })
       .then((data: ReplayData) => {
         clientCache.setReplay(selectedMatch.id, data);
         setReplay(data);
@@ -323,6 +327,10 @@ export default function MatchReplayPage({
 
     fetch(`/api/replays/${matchId}`, { headers })
       .then((res) => res.json())
+      .then((data: { url: string }) => {
+        if (!data.url) throw new Error("No presigned URL");
+        return fetch(data.url).then((r) => r.json());
+      })
       .then((data) => {
         clientCache.setReplay(matchId, data);
         triggerDownload(data);

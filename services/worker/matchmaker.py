@@ -178,6 +178,7 @@ def _enqueue_locked(conn, limit_override=None):
         "FROM submissions s "
         "LEFT JOIN submission_ratings sr ON sr.submission_id = s.id "
         "WHERE s.status = 'active' "
+        "AND s.artifact_key IS NOT NULL AND s.artifact_key != '' "
         "ORDER BY s.created_at DESC", ())
 
     if not rows:

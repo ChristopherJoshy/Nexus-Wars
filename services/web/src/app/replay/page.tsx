@@ -124,9 +124,15 @@ function GameHistoryContent() {
               if (!data) {
                 const res = await fetch(`/api/replays/${m.id}`);
                 if (res.ok) {
-                  data = await res.json();
-                  if (data && !data.error) {
-                    clientCache.setReplay(m.id, data);
+                  const { url } = await res.json();
+                  if (url) {
+                    const replayRes = await fetch(url);
+                    if (replayRes.ok) {
+                      data = await replayRes.json();
+                      if (data && !data.error) {
+                        clientCache.setReplay(m.id, data);
+                      }
+                    }
                   }
                 }
               }

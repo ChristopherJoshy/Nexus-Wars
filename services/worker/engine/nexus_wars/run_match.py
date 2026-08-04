@@ -147,7 +147,7 @@ class SubprocessRunner:
             return []
 
         if self.is_first_turn:
-            timeout = 2.0
+            timeout = self._max_adaptive
             self.is_first_turn = False
         elif self._slow:
             timeout = self._max_adaptive

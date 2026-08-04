@@ -4,6 +4,7 @@ import { matches, teamMembers } from "@/lib/db/schema";
 import { getSession } from "@/lib/get-session";
 import { eq } from "drizzle-orm";
 import { getS3, S3_BUCKET, GetObjectCommand } from "@/lib/s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 export async function GET(
   req: NextRequest,
@@ -51,21 +52,19 @@ export async function GET(
   }
 
   try {
-    const result = await s3.send(
-      new GetObjectCommand({
-        Bucket: S3_BUCKET,
-        Key: match.replayKey,
-      })
-    );
-    const body = await result.Body?.transformToString();
-    if (!body) {
-      return NextResponse.json(
-        { error: "Replay data empty" },
-        { status: 404 }
-      );
-    }
-    const replay = JSON.parse(body);
-    return NextResponse.json(replay);
+    const replayKey = match.replayKey;
+    const filename = `replay-${matchId}.json`;
+
+    const command = new GetObjectCommand({
+      Bucket: S3_BUCKET,
+      Key: replayKey,
+      ResponseContentDisposition: `attachment; filename="${filename}"`,
+      ResponseContentType: "application/json",
+    });
+
+    const url = await getSignedUrl(s3, command, { expiresIn: 60 });
+
+    return NextResponse.json({ url, filename });
   } catch {
     return NextResponse.json(
       { error: "Replay not found in storage" },

@@ -169,6 +169,7 @@ def promote_submissions(conn, submission_id):
     rows = query(conn,
         "SELECT id FROM submissions WHERE team_id=%s "
         "AND status IN ('validated','active','inactive') "
+        "AND artifact_key IS NOT NULL AND artifact_key != '' "
         "ORDER BY created_at DESC", (team_id,))
     ids = [r[0] for r in rows]
     active = set(ids[:2])
