@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef } from "react";
 import Link from "next/link";
-import { Upload, Zap, Clock, Play, Loader2, RefreshCw } from "lucide-react";
+import { Upload, Zap, Clock, Play, Loader2, RefreshCw, Download } from "lucide-react";
 import { useSession, signIn } from "@/lib/auth-client";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -105,6 +105,29 @@ export default function SubmissionsPage() {
   const [hasTeam, setHasTeam] = useState<boolean | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const tableRef = useRef<HTMLTableSectionElement>(null);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
+
+  const handleDownload = async (subId: string, filename: string) => {
+    if (!session || downloadingId) return;
+    setDownloadingId(subId);
+    try {
+      const res = await fetch(`/api/submissions/download/${subId}`, {
+        headers: { Authorization: `Bearer ${session.token}` },
+      });
+      if (!res.ok) throw new Error("Failed to get download link");
+      const { url } = await res.json();
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    } catch {
+      // silently ignore
+    } finally {
+      setDownloadingId(null);
+    }
+  };
 
   // Initial fetch and manual reload handler
   useEffect(() => {
@@ -521,6 +544,7 @@ export default function SubmissionsPage() {
               </TableHead>
               <TableHead className="w-24 text-muted-foreground font-medium text-[11px] text-center">Uploaded</TableHead>
               <TableHead className="w-28 text-muted-foreground font-medium text-[11px] text-center">Episodes</TableHead>
+              <TableHead className="w-24 text-muted-foreground font-medium text-[11px] text-center">Download</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody ref={tableRef}>
@@ -533,6 +557,7 @@ export default function SubmissionsPage() {
                   <TableCell><Skeleton className="h-4 w-12 ml-auto" /></TableCell>
                   <TableCell><Skeleton className="h-4 w-14 mx-auto" /></TableCell>
                   <TableCell><Skeleton className="h-4 w-12 mx-auto" /></TableCell>
+                  <TableCell><Skeleton className="h-7 w-20 mx-auto rounded-md" /></TableCell>
                   <TableCell><Skeleton className="h-7 w-20 mx-auto rounded-md" /></TableCell>
                 </TableRow>
               ))
@@ -614,6 +639,23 @@ export default function SubmissionsPage() {
                         <span>Episodes</span>
                       </Link>
                     </TableCell>
+
+                    {/* Download Bot Button */}
+                    <TableCell className="text-center">
+                      <button
+                        onClick={() => handleDownload(s.id, filename)}
+                        disabled={downloadingId === s.id}
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-muted hover:bg-blue-500/10 border border-border hover:border-blue-500/40 text-xs font-medium text-foreground hover:text-blue-500 transition-all cursor-pointer active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                        title={`Download ${filename}`}
+                      >
+                        {downloadingId === s.id ? (
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                        ) : (
+                          <Download className="w-3 h-3" />
+                        )}
+                        <span>{downloadingId === s.id ? "…" : "Download"}</span>
+                      </button>
+                    </TableCell>
                   </TableRow>
                 );
               })
@@ -622,7 +664,7 @@ export default function SubmissionsPage() {
             {!loading && filteredSubmissions.length === 0 && (
               <TableRow>
                 <TableCell
-                  colSpan={7}
+                  colSpan={8}
                   className="text-center py-12 text-xs font-mono text-muted-foreground uppercase"
                 >
                   NO SUBMISSIONS RECORDED YET
