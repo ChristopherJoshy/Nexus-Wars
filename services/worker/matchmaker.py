@@ -28,7 +28,7 @@ def _release_lock(conn):
 def _compute_dynamic_params(n_teams, rating_spread):
     """All matchmaking thresholds derived from live leaderboard state."""
     # Pair cooldown: 1.0 to 3.0 minutes to guarantee team variety and opponent rotation
-    pair_cooldown = max(1.0, min(3.0, n_teams * 0.15))
+    pair_cooldown = max(1.5, min(5.0, n_teams * 0.20))
     
     # Minimal agent cooldown: 3 seconds (0.05 min) so bots re-enter matching as soon as their match ends
     agent_cooldown = 0.05
@@ -297,11 +297,12 @@ def _enqueue_locked(conn, limit_override=None):
 
                 is_starved_a = (h_count_a == 0) or (mins_a > 2.0)
                 is_starved_b = (h_count_b == 0) or (mins_b > 2.0)
+                is_uncal = (played_a == 0 or played_b == 0 or rd_a >= 300.0 or rd_b >= 300.0)
 
                 gap = abs(rating_a - rating_b)
 
-                # Hard ceiling: No match is EVER created across a >250 Elo gap
-                if gap > 250.0:
+                # Hard ceiling: No match is EVER created across a >250 Elo gap (unless uncalibrated)
+                if gap > 250.0 and not is_uncal:
                     continue
 
                 # Dynamic Top-Tier Protection: Top teams (within 150 Elo of peak) only match within 220 Elo of peak
@@ -315,21 +316,25 @@ def _enqueue_locked(conn, limit_override=None):
                     continue
 
                 # Starved teams can bypass gap check, but only up to 1.2x hard_gap
-                if gap > current_hard_gap and not (is_starved_a or is_starved_b):
+                if gap > current_hard_gap and not (is_starved_a or is_starved_b or is_uncal):
                     continue
-                if gap > current_hard_gap * 1.2:
+                if gap > current_hard_gap * 1.2 and not is_uncal:
                     continue
 
                 # 1. Quadratic Elo Distance Penalty (30 Elo gap = 1.0, 100 Elo = 11.1, 200 Elo = 44.4)
-                elo_penalty = (gap / 30.0) ** 2.0
+                # If uncalibrated, remove the Elo penalty so they get priority matching and don't get starved by calibrated bots on the same team
+                elo_penalty = 0.0 if is_uncal else (gap / 30.0) ** 2.0
 
                 # 2. Smooth Recency Decay over 15-minute horizon (forces opponent rotation)
                 mins_ago = pair_last_played.get((tid_a, tid_b), 999999.0)
                 recency_penalty = 30.0 / (max(0.05, mins_ago) + 0.4)
 
-                # 3. Opponent Diversity Penalty: heavily penalize repeated matchups
+                # 3. Opponent Diversity Penalty: strongly penalize repeated matchups
                 times_played = pair_match_counts.get((tid_a, tid_b), 0)
-                diversity_penalty = 12.0 * times_played
+                # Extra: if they played each other recently (last 30 min), add a steep cooldown
+                mins_since_last = pair_last_played.get((tid_a, tid_b), 999999.0)
+                recent_pair_penalty = max(0.0, (30.0 - mins_since_last) * 3.0) if mins_since_last < 30.0 else 0.0
+                diversity_penalty = 35.0 * times_played + recent_pair_penalty
 
                 # 4. Load Balancing & Info Gain
                 overload = (max(0, h_count_a - avg_hour_matches) + max(0, h_count_b - avg_hour_matches))
