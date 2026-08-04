@@ -338,7 +338,7 @@ export default function MatchReplayPage({
       .catch(() => {});
   };
 
-  const currentStep = replay ? replay.steps[Math.min(step, replay.steps.length - 1)] : null;
+  const currentStep = replay?.steps?.length ? replay.steps[Math.min(step, replay.steps.length - 1)] : null;
 
   return (
     <div className="replay-workspace flex flex-col lg:flex-row h-[calc(100vh-6rem)] -my-7 -mx-5 sm:-mx-8 overflow-hidden text-foreground transition-colors duration-200">
@@ -526,7 +526,7 @@ export default function MatchReplayPage({
                   ? "bg-sky-500/15 text-sky-500 border-sky-500/30"
                   : "bg-destructive/15 text-destructive border-destructive/30"
               }`}>
-                [{selectedMatch.winner === "a" ? "Win" : selectedMatch.winner === "draw" ? "Draw" : "Loss"}] {selectedMatch.teamA} ({selectedMatch.scores[0] ?? 25})
+                [{selectedMatch.winner === "a" ? "Win" : selectedMatch.winner === "draw" ? "Draw" : "Loss"}] {selectedMatch.teamA} ({selectedMatch.scores?.[0] ?? 25})
               </div>
 
               <span className="text-muted-foreground font-bold">vs</span>
@@ -538,7 +538,7 @@ export default function MatchReplayPage({
                   ? "bg-amber-500/15 text-amber-500 border-amber-500/30"
                   : "bg-destructive/15 text-destructive border-destructive/30"
               }`}>
-                [{selectedMatch.winner === "b" ? "Win" : selectedMatch.winner === "draw" ? "Draw" : "Loss"}] {selectedMatch.teamB} ({selectedMatch.scores[1] ?? 25})
+                [{selectedMatch.winner === "b" ? "Win" : selectedMatch.winner === "draw" ? "Draw" : "Loss"}] {selectedMatch.teamB} ({selectedMatch.scores?.[1] ?? 25})
               </div>
             </div>
 

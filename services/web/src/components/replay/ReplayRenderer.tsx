@@ -79,13 +79,13 @@ interface ReplayRendererProps {
 
 function parsePlanets(raw: number[][]): Planet[] {
   return raw.map((p) => ({
-    id: p[0],
-    owner: p[1],
-    x: p[2],
-    y: p[3],
-    radius: p[4],
-    ships: p[5],
-    production: p[6],
+    id: p[0] ?? 0,
+    owner: p[1] ?? -1,
+    x: p[2] ?? 0,
+    y: p[3] ?? 0,
+    radius: p[4] ?? 2,
+    ships: p[5] ?? 0,
+    production: p[6] ?? 0,
     energy: p[7] ?? 100,
     energyCap: p[8] ?? 100,
     energyRegen: p[9] ?? 5,
@@ -94,14 +94,14 @@ function parsePlanets(raw: number[][]): Planet[] {
 
 function parseFleets(raw: number[][]): Fleet[] {
   return raw.map((f) => ({
-    id: f[0],
-    owner: f[1],
-    x: f[2],
-    y: f[3],
-    angle: f[4],
-    from_planet_id: f[5],
-    ships: f[6],
-    launchedStep: f[7],
+    id: f[0] ?? 0,
+    owner: f[1] ?? -1,
+    x: f[2] ?? 0,
+    y: f[3] ?? 0,
+    angle: f[4] ?? 0,
+    from_planet_id: f[5] ?? -1,
+    ships: f[6] ?? 0,
+    launchedStep: f[7] ?? 0,
   }));
 }
 

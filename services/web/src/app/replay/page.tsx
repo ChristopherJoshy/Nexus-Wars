@@ -430,7 +430,7 @@ function GameHistoryContent() {
       .catch(() => {});
   };
 
-  const currentStep = replay ? replay.steps[Math.min(step, replay.steps.length - 1)] : null;
+  const currentStep = replay?.steps?.length ? replay.steps[Math.min(step, replay.steps.length - 1)] : null;
 
   // Compute live match telemetry statistics from currentStep
   const telemetry = useMemo(() => {
