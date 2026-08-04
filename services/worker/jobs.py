@@ -126,30 +126,37 @@ def bot_runner(workdir):
 # --------------------------------------------------------------------------
 def run_validation(conn, submission_id):
     workdir = extract_submission(conn, submission_id)
-    runner_a = rm.make_runner(bot_runner(workdir))
-    runner_b = rm.make_runner("random")
-    replay = rm.run_match([runner_a, runner_b], engine_config(),
-                           seed=secrets.randbits(31))
+    try:
+        runner_a = rm.make_runner(bot_runner(workdir))
+        runner_b = rm.make_runner("random")
+        
+        cfg = engine_config()
+        cfg["episodeSteps"] = 10  # Fast validation
+        
+        replay = rm.run_match([runner_a, runner_b], cfg,
+                               seed=secrets.randbits(31))
 
-    key = f"validation/{submission_id}.json"
-    size = put_json(key, replay)
+        key = f"validation/{submission_id}.json"
+        size = put_json(key, replay)
 
-    ok = (not runner_a.dead) and replay["info"]["steps"] >= 1
-    reason = None if ok else "agent_error_or_timeout"
-    execute(conn,
-            "UPDATE submissions SET status=%s, validation_replay_key=%s, "
-            "reject_reason=%s, engine_version=%s WHERE id=%s",
-            ("validated" if ok else "rejected", key, reason, ENGINE_VERSION, submission_id))
-    if ok:
-        team = execute_returning(conn,
-            "SELECT team_id FROM submissions WHERE id=%s", (submission_id,))
-        if team:
-            execute(conn,
-                "INSERT INTO submission_ratings(submission_id, team_id) "
-                "VALUES(%s,%s) ON CONFLICT (submission_id) DO NOTHING",
-                (submission_id, team[0]))
-        promote_submissions(conn, submission_id)
-    return ok
+        ok = (not runner_a.dead) and replay["info"]["steps"] >= 1
+        reason = None if ok else "agent_error_or_timeout"
+        execute(conn,
+                "UPDATE submissions SET status=%s, validation_replay_key=%s, "
+                "reject_reason=%s, engine_version=%s WHERE id=%s",
+                ("validated" if ok else "rejected", key, reason, ENGINE_VERSION, submission_id))
+        if ok:
+            team = execute_returning(conn,
+                "SELECT team_id FROM submissions WHERE id=%s", (submission_id,))
+            if team:
+                execute(conn,
+                    "INSERT INTO submission_ratings(submission_id, team_id) "
+                    "VALUES(%s,%s) ON CONFLICT (submission_id) DO NOTHING",
+                    (submission_id, team[0]))
+            promote_submissions(conn, submission_id)
+        return ok
+    finally:
+        shutil.rmtree(workdir, ignore_errors=True)
 
 
 def promote_submissions(conn, submission_id):
@@ -185,25 +192,29 @@ def run_rated(conn, match_id):
 
     wa = extract_submission(conn, sa)
     wb = extract_submission(conn, sb)
-    runner_a = rm.make_runner(bot_runner(wa))
-    runner_b = rm.make_runner(bot_runner(wb))
+    try:
+        runner_a = rm.make_runner(bot_runner(wa))
+        runner_b = rm.make_runner(bot_runner(wb))
 
-    replay = rm.run_match([runner_a, runner_b], cfg, seed=seed)
+        replay = rm.run_match([runner_a, runner_b], cfg, seed=seed)
 
-    key = f"rated/{match_id}.json"
-    size = put_json(key, replay)
+        key = f"rated/{match_id}.json"
+        size = put_json(key, replay)
 
-    winner = replay["info"]["winner"]
-    win_code = "a" if winner == 0 else ("b" if winner == 1 else "draw")
-    execute(conn,
-            "UPDATE matches SET status='finished', winner=%s, reason=%s, "
-            "replay_key=%s, scores=%s, finished_at=now(), duration_ms=%s "
-            "WHERE id=%s",
-            (win_code, replay["info"]["reason"], key,
-             json.dumps(replay["info"]["scores"]), replay["info"]["durationMs"], match_id))
+        winner = replay["info"]["winner"]
+        win_code = "a" if winner == 0 else ("b" if winner == 1 else "draw")
+        execute(conn,
+                "UPDATE matches SET status='finished', winner=%s, reason=%s, "
+                "replay_key=%s, scores=%s, finished_at=now(), duration_ms=%s "
+                "WHERE id=%s",
+                (win_code, replay["info"]["reason"], key,
+                 json.dumps(replay["info"]["scores"]), replay["info"]["durationMs"], match_id))
 
-    update_ratings(conn, ta, tb, winner, mid, sa, sb)
-    return win_code
+        update_ratings(conn, ta, tb, winner, mid, sa, sb)
+        return win_code
+    finally:
+        shutil.rmtree(wa, ignore_errors=True)
+        shutil.rmtree(wb, ignore_errors=True)
 
 
 def update_ratings(conn, team_a, team_b, winner, match_id, sub_a, sub_b):
