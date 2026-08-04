@@ -642,7 +642,7 @@ export default function SubmissionsPage() {
 
                     {/* Download Bot Button */}
                     <TableCell className="text-center">
-                      {isRejected ? (
+                      {!(s.artifactKey || s.artifact_key) ? (
                         <span className="text-muted-foreground/40 text-xs font-mono">—</span>
                       ) : (
                         <button
