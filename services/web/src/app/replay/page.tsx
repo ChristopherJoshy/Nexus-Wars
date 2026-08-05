@@ -288,6 +288,14 @@ function GameHistoryContent() {
         if (!res.ok) throw new Error("Replay fetch error");
         return res.json();
       })
+      .then((meta: { url?: string; error?: string }) => {
+        if (!meta.url) throw new Error("No replay URL");
+        return fetch(meta.url);
+      })
+      .then((res) => {
+        if (!res.ok) throw new Error("Replay data fetch error");
+        return res.json();
+      })
       .then((data: ReplayData) => {
         clientCache.setReplay(selectedMatch.id, data);
         setReplay(data);
