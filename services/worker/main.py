@@ -18,6 +18,7 @@ from config import POLL_INTERVAL, MAX_CONCURRENT, WORKER_ID
 from db import get_conn, execute, execute_returning
 import jobs
 import matchmaker
+import feed_generator
 
 MIGRATIONS_DIR = os.environ.get("MIGRATIONS_DIR", "/migrations")
 
@@ -90,7 +91,7 @@ def claim_job():
         row = execute_returning(conn,
             "UPDATE jobs SET status='running', started_at=now(), worker_id=%s "
             "WHERE id = (SELECT id FROM jobs WHERE status='pending' "
-            "ORDER BY created_at LIMIT 1 FOR UPDATE SKIP LOCKED) "
+            "ORDER BY type ASC, created_at LIMIT 1 FOR UPDATE SKIP LOCKED) "
             "RETURNING id, type, payload_json",
             (WORKER_ID,))
         conn.commit()
@@ -109,8 +110,14 @@ def process(job):
         print(f"[ok] job {job_id} ({job[1]})")
     except Exception as e:  # noqa: BLE001
         conn.rollback()
+        err_str = str(e)
+        # Thread exhaustion: exit so Docker restarts the container cleanly
+        if "can't start new thread" in err_str:
+            print(f"[fatal] thread exhaustion detected, restarting worker: {e}")
+            import sys as _sys
+            _sys.exit(1)
         execute(conn, "UPDATE jobs SET status='failed', error=%s, finished_at=now() WHERE id=%s",
-                (str(e)[:2000], job_id))
+                (err_str[:2000], job_id))
         if job[1] == "validate":
             try:
                 import json
@@ -132,6 +139,7 @@ def main():
     import threading
     wait_for_db()
     run_migrations()
+    feed_generator.start_feed_generator()
     sem = threading.Semaphore(MAX_CONCURRENT)
     matchmake_every = max(1, int(10 / POLL_INTERVAL))  # ~every 10s
     ticks = matchmake_every - 1  # run matchmaker immediately on first tick
@@ -145,6 +153,11 @@ def main():
                     c = get_conn()
                     matchmaker.enqueue_matches(c)
                 except Exception as e:  # noqa: BLE001
+                    err_str = str(e)
+                    if "can't start new thread" in err_str:
+                        print(f"[fatal] thread exhaustion in matchmaker, restarting: {e}")
+                        import sys as _sys
+                        _sys.exit(1)
                     print(f"[matchmaker] error: {e}")
                 finally:
                     if c:

@@ -57,9 +57,18 @@ export default function LiveFeed() {
       try {
         const res = await fetch("/api/live_feed?t=" + Date.now());
         if (!res.ok) return;
-        const data = await res.json();
-        
+        const meta = await res.json();
+
+        // New: API returns a presigned URL — fetch data directly from MinIO
+        let data: any = meta;
+        if (meta.url) {
+          const dataRes = await fetch(meta.url);
+          if (!dataRes.ok) return;
+          data = await dataRes.json();
+        }
+
         if (!data.events || !Array.isArray(data.events)) return;
+
 
         const newToasts: Toast[] = [];
         

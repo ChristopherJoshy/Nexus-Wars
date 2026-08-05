@@ -93,6 +93,17 @@ services:
       - MKNOD       # nsjail: device nodes
       - SYS_CHROOT  # nsjail: chroot
     restart: unless-stopped
+    pids_limit: 4000
+    ulimits:
+      nproc:
+        soft: 4000
+        hard: 4000
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import os; pids=int(open('/sys/fs/cgroup/pids.current').read().strip()); exit(1 if pids > 3500 else 0)"]
+      interval: 30s
+      timeout: 5s
+      retries: 2
+      start_period: 20s
 
 volumes:
   nexus_pg:
