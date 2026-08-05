@@ -143,9 +143,16 @@ def main():
     sem = threading.Semaphore(MAX_CONCURRENT)
     matchmake_every = max(1, int(10 / POLL_INTERVAL))  # ~every 10s
     ticks = matchmake_every - 1  # run matchmaker immediately on first tick
+    # Proactive restart every 4 hours to flush zombie processes before PID limit
+    restart_after_secs = 4 * 60 * 60
+    started_at = time.time()
     with ThreadPoolExecutor(max_workers=MAX_CONCURRENT) as ex:
         print(f"worker {WORKER_ID} started (max_concurrent={MAX_CONCURRENT})")
         while True:
+            # Proactive scheduled restart
+            if time.time() - started_at > restart_after_secs:
+                print("[worker] scheduled restart to flush zombie processes")
+                sys.exit(0)
             ticks += 1
             if ticks % matchmake_every == 0:
                 c = None
@@ -156,8 +163,7 @@ def main():
                     err_str = str(e)
                     if "can't start new thread" in err_str:
                         print(f"[fatal] thread exhaustion in matchmaker, restarting: {e}")
-                        import sys as _sys
-                        _sys.exit(1)
+                        sys.exit(1)
                     print(f"[matchmaker] error: {e}")
                 finally:
                     if c:
