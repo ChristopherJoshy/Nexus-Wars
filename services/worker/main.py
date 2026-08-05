@@ -135,11 +135,47 @@ def process(job):
         conn.close()
 
 
+def _reap_zombies():
+    """Reap any zombie child processes to prevent PID accumulation."""
+    try:
+        while True:
+            pid, _ = os.waitpid(-1, os.WNOHANG)
+            if pid == 0:
+                break
+    except ChildProcessError:
+        pass
+    except Exception:
+        pass
+
+
+def _pid_watchdog(pid_limit=3000, check_interval=60):
+    """Background thread: if container PID count approaches limit, exit cleanly."""
+    pid_file = "/sys/fs/cgroup/pids.current"
+    while True:
+        time.sleep(check_interval)
+        try:
+            with open(pid_file) as f:
+                current = int(f.read().strip())
+            if current >= pid_limit:
+                print(f"[watchdog] PID count {current} >= {pid_limit}, triggering restart")
+                sys.exit(1)
+            elif current >= int(pid_limit * 0.7):
+                print(f"[watchdog] PID count {current} ({int(current/pid_limit*100)}% of limit)")
+        except Exception:
+            pass
+        _reap_zombies()
+
+
 def main():
-    import threading
     wait_for_db()
     run_migrations()
     feed_generator.start_feed_generator()
+
+    # Start PID watchdog background thread
+    import threading
+    wdog = threading.Thread(target=_pid_watchdog, daemon=True)
+    wdog.start()
+
     sem = threading.Semaphore(MAX_CONCURRENT)
     matchmake_every = max(1, int(10 / POLL_INTERVAL))  # ~every 10s
     ticks = matchmake_every - 1  # run matchmaker immediately on first tick

@@ -121,6 +121,8 @@ class SubprocessRunner:
             stderr=subprocess.DEVNULL,
             text=True,
             bufsize=1,
+            # New process group so we can kill the entire nsjail tree
+            start_new_session=True,
         )
 
         self.q = queue.Queue()
@@ -197,23 +199,61 @@ class SubprocessRunner:
         return []
 
     def _kill(self):
+        """Kill the bot process and its entire nsjail process group."""
         self.dead = True
         try:
+            import signal
+            # Kill entire process group (catches nsjail + its children)
+            os.killpg(os.getpgid(self.proc.pid), signal.SIGKILL)
+        except Exception:
+            pass
+        try:
             self.proc.kill()
+        except Exception:
+            pass
+        try:
+            self.proc.wait(timeout=1)
         except Exception:
             pass
 
     def close(self):
+        """Cleanly shut down the bot process and reap all resources."""
+        self.dead = True
+        # 1. Close stdin so bot gets EOF and exits cleanly
         try:
             self.proc.stdin.close()
         except Exception:
             pass
-        try:
-            self.proc.kill()
-        except Exception:
-            pass
+        # 2. Give it a moment to exit on its own
         try:
             self.proc.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            # 3. SIGTERM the process group first
+            try:
+                import signal
+                os.killpg(os.getpgid(self.proc.pid), signal.SIGTERM)
+            except Exception:
+                pass
+            time.sleep(0.5)
+            # 4. SIGKILL entire process group to ensure no zombies
+            try:
+                import signal
+                os.killpg(os.getpgid(self.proc.pid), signal.SIGKILL)
+            except Exception:
+                pass
+            # 5. Final wait to reap the zombie
+            try:
+                self.proc.wait(timeout=2)
+            except Exception:
+                pass
+        # 6. Close stdout pipe to unblock reader thread
+        try:
+            self.proc.stdout.close()
+        except Exception:
+            pass
+        # 7. Join reader thread (non-blocking, max 1s)
+        try:
+            self.reader_thread.join(timeout=1)
         except Exception:
             pass
 
