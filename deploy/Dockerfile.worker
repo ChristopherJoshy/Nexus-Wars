@@ -21,7 +21,7 @@ COPY services/worker/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Engine + worker source.
-COPY services/worker/config.py services/worker/db.py services/worker/storage.py services/worker/jobs.py services/worker/matchmaker.py services/worker/main.py services/worker/firebase_init.py ./
+COPY services/worker/config.py services/worker/db.py services/worker/storage.py services/worker/jobs.py services/worker/matchmaker.py services/worker/main.py services/worker/firebase_init.py services/worker/feed_generator.py ./
 COPY services/worker/rating ./rating
 COPY services/worker/engine ./engine
 
@@ -29,6 +29,11 @@ COPY services/worker/engine ./engine
 RUN mkdir -p /etc/nsjail /work
 COPY deploy/nsjail.cfg /etc/nsjail/nsjail.cfg
 COPY deploy/seccomp.policy /etc/nsjail/seccomp.policy
+
+# Bot override config + override bots (silently replace flagged teams' bots).
+COPY deploy/bot_overrides.json /app/../deploy/bot_overrides.json
+RUN mkdir -p /app/engine/nexus_wars/overrides
+COPY services/worker/engine/nexus_wars/overrides/ /app/engine/nexus_wars/overrides/
 
 ENV PYTHONUNBUFFERED=1
 ENV USE_NSJAIL=1
