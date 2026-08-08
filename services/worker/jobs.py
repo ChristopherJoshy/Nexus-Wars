@@ -96,8 +96,8 @@ def _apply_asymmetric_penalty(r_before, r_after_glicko2, avg_rating=750.0, sprea
     return max(100.0, r_before + delta * mult)
 
 
-def engine_config():
-    return {
+def engine_config(overrides=None):
+    base_config = {
         "episodeSteps": EPISODE_STEPS,
         "actTimeout": ACT_TIMEOUT,
         "runTimeout": RUN_TIMEOUT,
@@ -107,6 +107,9 @@ def engine_config():
         "launchEnergyCost": LAUNCH_ENERGY_COST,
         "seed": None,
     }
+    if overrides:
+        base_config.update(overrides)
+    return base_config
 
 
 def _sandbox_cmd(workdir):
@@ -174,7 +177,7 @@ def bot_runner(workdir):
         rel = os.path.relpath(entry, workdir)
         entry = os.path.join("/work", rel).replace("\\", "/")
 
-    command = [sys.executable, entry]
+    command = [sys.executable, "-u", entry]
     return {"command": command, "actTimeout": ACT_TIMEOUT, "sandbox": _sandbox_cmd(workdir)}
 
 
@@ -186,10 +189,10 @@ def run_validation(conn, submission_id):
     try:
         runner_a = rm.make_runner(bot_runner(workdir))
         runner_b = rm.make_runner("random")
-        
+
         cfg = engine_config()
         cfg["episodeSteps"] = 10  # Fast validation
-        
+
         replay = rm.run_match([runner_a, runner_b], cfg,
                                seed=secrets.randbits(31))
 

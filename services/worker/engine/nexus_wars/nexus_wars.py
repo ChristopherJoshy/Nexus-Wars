@@ -98,23 +98,39 @@ def swept_pair_hit(A, B, P0, P1, r):
 # Map generation (seeded, 4-fold symmetric, canonical coordinates)
 # --------------------------------------------------------------------------
 def generate_planets(rng=None, energy_cap=DEFAULT_ENERGY_CAP,
-                     energy_regen=DEFAULT_ENERGY_REGEN):
+                     energy_regen=DEFAULT_ENERGY_REGEN, symmetry="4-fold"):
     if rng is None:
         rng = random
     planets = []
-    num_q1 = rng.randint(MIN_PLANET_GROUPS, MAX_PLANET_GROUPS)
+    
+    # Adjust for sparse maps
+    min_groups, max_groups = MIN_PLANET_GROUPS, MAX_PLANET_GROUPS
+    if symmetry == "sparse":
+        min_groups = max(2, min_groups - 2)
+        max_groups = max(4, max_groups - 4)
+    num_q1 = rng.randint(min_groups, max_groups)
     id_counter = 0
 
     def make_group(x, y, r, ships, prod):
-        """Four 4-fold symmetric copies. x = horizontal, y = vertical."""
         e = energy_cap
         er = energy_regen
-        return [
-            [id_counter,     -1, x,               y,          r, ships, prod, e, e, er],
-            [id_counter + 1, -1, BOARD_SIZE - x,  y,          r, ships, prod, e, e, er],
-            [id_counter + 2, -1, x,               BOARD_SIZE - y, r, ships, prod, e, e, er],
-            [id_counter + 3, -1, BOARD_SIZE - x,  BOARD_SIZE - y, r, ships, prod, e, e, er],
-        ]
+        if symmetry == "horizontal":
+            return [
+                [id_counter,     -1, x,               y,          r, ships, prod, e, e, er],
+                [id_counter + 1, -1, BOARD_SIZE - x,  y,          r, ships, prod, e, e, er],
+            ]
+        elif symmetry == "vertical":
+            return [
+                [id_counter,     -1, x,               y,          r, ships, prod, e, e, er],
+                [id_counter + 1, -1, x,               BOARD_SIZE - y, r, ships, prod, e, e, er],
+            ]
+        else:
+            return [
+                [id_counter,     -1, x,               y,          r, ships, prod, e, e, er],
+                [id_counter + 1, -1, BOARD_SIZE - x,  y,          r, ships, prod, e, e, er],
+                [id_counter + 2, -1, x,               BOARD_SIZE - y, r, ships, prod, e, e, er],
+                [id_counter + 3, -1, BOARD_SIZE - x,  BOARD_SIZE - y, r, ships, prod, e, e, er],
+            ]
 
     # Phase 1: guaranteed static planet groups (outside the rotation band).
     static_groups = 0
@@ -153,14 +169,15 @@ def generate_planets(rng=None, energy_cap=DEFAULT_ENERGY_CAP,
 
         if valid:
             planets.extend(temp_planets)
-            id_counter += 4
+            id_counter += len(temp_planets)
             static_groups += 1
 
     # Phase 2: fill remaining groups (some orbiting, some static).
     attempts = 0
     max_attempts = 5000
     has_orbiting = False
-    while len(planets) < num_q1 * 4 or (not has_orbiting and attempts < max_attempts):
+    group_size = 2 if symmetry in ("horizontal", "vertical") else 4
+    while len(planets) < num_q1 * group_size or (not has_orbiting and attempts < max_attempts):
         attempts += 1
         if attempts >= max_attempts:
             break
@@ -205,7 +222,11 @@ def generate_planets(rng=None, energy_cap=DEFAULT_ENERGY_CAP,
             if orbital_radius + r < ROTATION_RADIUS_LIMIT:
                 has_orbiting = True
             planets.extend(temp_planets)
-            id_counter += 4
+            id_counter += len(temp_planets)
+
+    if symmetry == "core":
+        # Inject massive core planet at the end so it doesn't break home base indices
+        planets.append([id_counter, -1, CENTER, CENTER, 10.0, 150, 5, energy_cap, energy_cap, energy_regen])
 
     return planets
 
@@ -242,26 +263,32 @@ def interpreter(state, env):
 
         energy_cap = getattr(configuration, "energyCap", DEFAULT_ENERGY_CAP)
         energy_regen = getattr(configuration, "energyRegen", DEFAULT_ENERGY_REGEN)
+        symmetry = getattr(configuration, "symmetry", "4-fold")
 
         angular_velocity = init_rng.uniform(0.025, 0.05)
         obs0.angular_velocity = angular_velocity
-        obs0.planets = generate_planets(init_rng, energy_cap, energy_regen)
+        obs0.planets = generate_planets(init_rng, energy_cap, energy_regen, symmetry)
         obs0.initial_planets = [p.copy() for p in obs0.planets]
         obs0.fleets = []
         obs0.next_fleet_id = 0
         obs0.step = 0
 
-        num_groups = len(obs0.planets) // 4
+        group_size = 2 if symmetry in ("horizontal", "vertical") else 4
+        # Ignore the core planet at the end of the list when counting groups
+        num_planets = len(obs0.planets) - (1 if symmetry == "core" else 0)
+        num_groups = num_planets // group_size
+        
         if num_groups > 0:
             home_group = init_rng.randint(0, num_groups - 1)
-            base = home_group * 4
+            base = home_group * group_size
             if num_agents == 2:
                 obs0.planets[base][1] = 0
                 obs0.planets[base][5] = 10
-                obs0.planets[base + 3][1] = 1
-                obs0.planets[base + 3][5] = 10
+                enemy_idx = base + 1 if group_size == 2 else base + 3
+                obs0.planets[enemy_idx][1] = 1
+                obs0.planets[enemy_idx][5] = 10
             elif num_agents == 4:
-                for j in range(4):
+                for j in range(group_size):
                     obs0.planets[base + j][1] = j
                     obs0.planets[base + j][5] = 10
 

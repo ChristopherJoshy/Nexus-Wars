@@ -1,5 +1,6 @@
 import json
 import os
+import random
 import secrets
 import sys
 from datetime import datetime, timezone, timedelta
@@ -126,11 +127,37 @@ def create_match(conn, a, b):
         a, b = b, a
 
     seed = secrets.randbits(31)
+
+    # Apply Random Map Mutators & Asymmetric Symmetries
+    era_roll = random.random()
+    overrides = {}
+    if era_roll < 0.2:
+        overrides["shipSpeed"] = 12.0  # Rush Era
+    elif era_roll < 0.4:
+        overrides["launchEnergyCost"] = 10  # Overcharge Era
+    elif era_roll < 0.6:
+        overrides["energyCap"] = 200  # Fortress Era
+        overrides["energyRegen"] = 2
+    
+    sym_roll = random.random()
+    if sym_roll < 0.15:
+        overrides["symmetry"] = "horizontal"
+    elif sym_roll < 0.3:
+        overrides["symmetry"] = "vertical"
+    elif sym_roll < 0.45:
+        overrides["symmetry"] = "core"
+    elif sym_roll < 0.6:
+        overrides["symmetry"] = "sparse"
+    else:
+        overrides["symmetry"] = "4-fold"
+
+    final_config = engine_config(overrides)
+
     mid = execute_returning(conn,
         "INSERT INTO matches(team_a_id, team_b_id, submission_a_id, "
         "submission_b_id, seed, status, configuration_json, kind) "
         "VALUES(%s,%s,%s,%s,%s,'pending',%s,'rated') RETURNING id",
-        (a[0], b[0], a[1], b[1], seed, json.dumps(engine_config())))
+        (a[0], b[0], a[1], b[1], seed, json.dumps(final_config)))
     match_id = str(mid[0])
     execute(conn,
             "INSERT INTO jobs(type, payload_json, status) "
