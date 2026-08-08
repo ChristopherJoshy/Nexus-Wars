@@ -75,6 +75,7 @@ interface ReplayRendererProps {
   showProduction?: boolean;
   showTrajectories?: boolean;
   fleetSizeFilter?: "all" | "small" | "medium" | "large";
+  configuration?: any;
 }
 
 function parsePlanets(raw: number[][]): Planet[] {
@@ -113,6 +114,7 @@ export function ReplayRenderer({
   showProduction = true,
   showTrajectories = false,
   fleetSizeFilter = "all",
+  configuration,
 }: ReplayRendererProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -181,33 +183,35 @@ export function ReplayRenderer({
     const planetsMap = new Map<number, Planet>();
     planets.forEach((p) => planetsMap.set(p.id, p));
 
-    // Central Sun
-    const sunX = toScreenX(CENTER);
-    const sunY = toScreenY(CENTER);
-    const sunR = SUN_RADIUS * scale;
+    // Central Sun (Hidden on Core Symmetry to avoid overlap with massive core planet)
+    if (configuration?.symmetry !== "core") {
+      const sunX = toScreenX(CENTER);
+      const sunY = toScreenY(CENTER);
+      const sunR = SUN_RADIUS * scale;
 
-    // Sun Solar Corona / Aura
-    ctx.beginPath();
-    ctx.arc(sunX, sunY, sunR * 2.4, 0, Math.PI * 2);
-    const auraGrad = ctx.createRadialGradient(sunX, sunY, sunR * 0.4, sunX, sunY, sunR * 2.4);
-    auraGrad.addColorStop(0, "rgba(217, 119, 6, 0.28)");
-    auraGrad.addColorStop(0.5, "rgba(217, 119, 6, 0.08)");
-    auraGrad.addColorStop(1, "rgba(217, 119, 6, 0)");
-    ctx.fillStyle = auraGrad;
-    ctx.fill();
+      // Sun Solar Corona / Aura
+      ctx.beginPath();
+      ctx.arc(sunX, sunY, sunR * 2.4, 0, Math.PI * 2);
+      const auraGrad = ctx.createRadialGradient(sunX, sunY, sunR * 0.4, sunX, sunY, sunR * 2.4);
+      auraGrad.addColorStop(0, "rgba(217, 119, 6, 0.28)");
+      auraGrad.addColorStop(0.5, "rgba(217, 119, 6, 0.08)");
+      auraGrad.addColorStop(1, "rgba(217, 119, 6, 0)");
+      ctx.fillStyle = auraGrad;
+      ctx.fill();
 
-    // Sun Body Gradient
-    ctx.beginPath();
-    ctx.arc(sunX, sunY, sunR, 0, Math.PI * 2);
-    const sunGrad = ctx.createRadialGradient(sunX - sunR * 0.25, sunY - sunR * 0.25, 0, sunX, sunY, sunR);
-    sunGrad.addColorStop(0, "#fde68a");
-    sunGrad.addColorStop(0.5, "#d97706");
-    sunGrad.addColorStop(1, "#b45309");
-    ctx.fillStyle = sunGrad;
-    ctx.fill();
-    ctx.strokeStyle = "#92400e";
-    ctx.lineWidth = 1.5;
-    ctx.stroke();
+      // Sun Body Gradient
+      ctx.beginPath();
+      ctx.arc(sunX, sunY, sunR, 0, Math.PI * 2);
+      const sunGrad = ctx.createRadialGradient(sunX - sunR * 0.25, sunY - sunR * 0.25, 0, sunX, sunY, sunR);
+      sunGrad.addColorStop(0, "#fde68a");
+      sunGrad.addColorStop(0.5, "#d97706");
+      sunGrad.addColorStop(1, "#b45309");
+      ctx.fillStyle = sunGrad;
+      ctx.fill();
+      ctx.strokeStyle = "#92400e";
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    }
 
     // Optional: Fleet Trajectory Dashed Lines (Only rendered when showTrajectories is true)
     if (showTrajectories && fleets.length > 0) {
@@ -379,7 +383,47 @@ export function ReplayRenderer({
     ctx.textAlign = "left";
     ctx.textBaseline = "top";
     ctx.fillText(`Step ${step.observation.step}`, padding + 6, padding + 6);
-  }, [step, width, height, showFleetNum, showProduction, showTrajectories, fleetSizeFilter]);
+
+    // Mutators Overlay
+    if (configuration) {
+      ctx.save();
+      
+      let eraName = "Standard";
+      if (configuration.shipSpeed === 12.0) eraName = "Rush";
+      else if (configuration.launchEnergyCost === 10) eraName = "Overcharge";
+      else if (configuration.energyCap === 200) eraName = "Fortress";
+
+      const symmetry = configuration.symmetry || "4-fold";
+
+      const boxX = padding;
+      const boxY = height - padding - 45;
+
+      ctx.fillStyle = "rgba(15, 23, 42, 0.85)"; // slate-900 with alpha
+      ctx.beginPath();
+      // Polyfill for roundRect which is relatively new in standard ctx but works in modern browsers
+      if (ctx.roundRect) {
+        ctx.roundRect(boxX, boxY, 150, 45, 6);
+      } else {
+        ctx.rect(boxX, boxY, 150, 45);
+      }
+      ctx.fill();
+
+      ctx.font = "bold 11px monospace";
+      ctx.textAlign = "left";
+      ctx.textBaseline = "top";
+
+      // Era
+      ctx.fillStyle = "#facc15"; // Tailwind yellow-400
+      ctx.fillText(`ERA: ${eraName.toUpperCase()}`, boxX + 10, boxY + 10);
+      
+      // Map
+      ctx.fillStyle = "#38bdf8"; // Tailwind sky-400
+      ctx.fillText(`MAP: ${symmetry.toUpperCase()}`, boxX + 10, boxY + 25);
+
+      ctx.restore();
+    }
+
+  }, [step, width, height, showFleetNum, showProduction, showTrajectories, fleetSizeFilter, configuration]);
 
   return (
     <canvas

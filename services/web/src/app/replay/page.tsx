@@ -875,6 +875,7 @@ function GameHistoryContent() {
                 showProduction={showProduction}
                 showTrajectories={showTrajectories}
                 fleetSizeFilter={fleetSizeFilter}
+                configuration={replay?.configuration}
               />
             ) : loadingMatches ? (
               <div className="flex flex-col items-center justify-center space-y-3 font-mono">

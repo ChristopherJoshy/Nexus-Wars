@@ -599,6 +599,7 @@ export default function MatchReplayPage({
               showProduction={showProduction}
               showTrajectories={showTrajectories}
               fleetSizeFilter={fleetSizeFilter}
+              configuration={replay?.configuration}
             />
           ) : (
             <div className="flex flex-col items-center justify-center space-y-3 font-mono">
