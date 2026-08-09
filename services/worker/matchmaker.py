@@ -297,11 +297,11 @@ def _enqueue_locked(conn, limit_override=None):
         active_pairs.add((r[0], r[1]))
         active_pairs.add((r[1], r[0]))
 
-    # 1. Filter: allow Top 3 teams up to 3 concurrent matches, others up to 1 concurrent match.
+    # 1. Filter: allow all Top 12 teams up to 5 concurrent matches simultaneously.
     eligible = []
     for r in rows:
         tid, sid, actual_rating, played, rd = r[0], r[1], float(r[2]), int(r[3]), float(r[4])
-        max_concurrent = 3 if tid in top_3_ids else 1
+        max_concurrent = 5
         if sub_active_counts.get(sid, 0) >= max_concurrent:
             continue
         effective_rating = actual_rating
@@ -406,8 +406,8 @@ def _enqueue_locked(conn, limit_override=None):
             tid_a, sid_a, _, _, _ = eligible[i]
             tid_b, sid_b, _, _, _ = eligible[j]
 
-            max_a = 3 if tid_a in top_3_ids else 1
-            max_b = 3 if tid_b in top_3_ids else 1
+            max_a = 5
+            max_b = 5
 
             count_a = sub_active_counts.get(sid_a, 0) + sub_cycle_uses.get(sid_a, 0)
             count_b = sub_active_counts.get(sid_b, 0) + sub_cycle_uses.get(sid_b, 0)
