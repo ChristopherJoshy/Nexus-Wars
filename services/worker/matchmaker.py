@@ -281,28 +281,29 @@ def _enqueue_locked(conn, limit_override=None):
         ") t GROUP BY tid", ())
     team_last_match = {r[0]: float(r[1]) if r[1] is not None else 999999.0 for r in team_last_rows}
 
-    # Batch query: which submissions are busy (pending/running) or in agent cooldown?
-    # Single UNION replaces _has_pending_match + _in_cooldown per submission.
-    busy_rows = query(conn,
-        "SELECT DISTINCT submission_a_id AS sid FROM matches WHERE status IN ('pending','running') "
-        "UNION "
-        "SELECT DISTINCT submission_b_id FROM matches WHERE status IN ('pending','running') "
-        "UNION "
-        "SELECT DISTINCT submission_a_id FROM matches WHERE status='finished' "
-        "    AND finished_at > now() - (%s * interval '1 minute') "
-        "UNION "
-        "SELECT DISTINCT submission_b_id FROM matches WHERE status='finished' "
-        "    AND finished_at > now() - (%s * interval '1 minute')",
-        (float(agent_cooldown), float(agent_cooldown)))
-    busy_subs = {r[0] for r in busy_rows}
+    # Active pending/running match counts per submission and active pairs
+    active_matches_rows = query(conn,
+        "SELECT sid, COUNT(*) FROM ("
+        "  SELECT submission_a_id AS sid FROM matches WHERE status IN ('pending','running') "
+        "  UNION ALL "
+        "  SELECT submission_b_id AS sid FROM matches WHERE status IN ('pending','running') "
+        ") t GROUP BY sid", ())
+    sub_active_counts = {r[0]: int(r[1]) for r in active_matches_rows}
 
-    # 1. Filter: remove submissions with pending/running matches or agent in cooldown.
+    active_pair_rows = query(conn,
+        "SELECT team_a_id, team_b_id FROM matches WHERE status IN ('pending','running')", ())
+    active_pairs = set()
+    for r in active_pair_rows:
+        active_pairs.add((r[0], r[1]))
+        active_pairs.add((r[1], r[0]))
+
+    # 1. Filter: allow Top 3 teams up to 3 concurrent matches, others up to 1 concurrent match.
     eligible = []
     for r in rows:
         tid, sid, actual_rating, played, rd = r[0], r[1], float(r[2]), int(r[3]), float(r[4])
-        if sid in busy_subs:
+        max_concurrent = 3 if tid in top_3_ids else 1
+        if sub_active_counts.get(sid, 0) >= max_concurrent:
             continue
-        # Use submission-specific rating, not team's highest (fixes climb barrier)
         effective_rating = actual_rating
         eligible.append((tid, sid, effective_rating, played, rd))
 
@@ -310,8 +311,7 @@ def _enqueue_locked(conn, limit_override=None):
         return 0
 
     created = 0
-    used_subs: set = set()
-    used_teams: set = set()
+    sub_cycle_uses = {}
 
     def find_and_create_pairs(current_hard_gap, current_pair_cooldown):
         nonlocal created
@@ -321,6 +321,9 @@ def _enqueue_locked(conn, limit_override=None):
             for j in range(i + 1, len(eligible)):
                 tid_b, sid_b, rating_b, played_b, rd_b = eligible[j]
                 if tid_a == tid_b:
+                    continue
+
+                if (tid_a, tid_b) in active_pairs:
                     continue
 
                 mins_ago = pair_last_played.get((tid_a, tid_b), 999999.0)
@@ -396,11 +399,24 @@ def _enqueue_locked(conn, limit_override=None):
                 break
             tid_a, sid_a, _, _, _ = eligible[i]
             tid_b, sid_b, _, _, _ = eligible[j]
-            if tid_a in used_teams or tid_b in used_teams or sid_a in used_subs or sid_b in used_subs:
+
+            max_a = 3 if tid_a in top_3_ids else 1
+            max_b = 3 if tid_b in top_3_ids else 1
+
+            count_a = sub_active_counts.get(sid_a, 0) + sub_cycle_uses.get(sid_a, 0)
+            count_b = sub_active_counts.get(sid_b, 0) + sub_cycle_uses.get(sid_b, 0)
+
+            if count_a >= max_a or count_b >= max_b:
                 continue
+
+            if (tid_a, tid_b) in active_pairs:
+                continue
+
             create_match(conn, (tid_a, sid_a), (tid_b, sid_b))
-            used_subs.update({sid_a, sid_b})
-            used_teams.update({tid_a, tid_b})
+            sub_cycle_uses[sid_a] = sub_cycle_uses.get(sid_a, 0) + 1
+            sub_cycle_uses[sid_b] = sub_cycle_uses.get(sid_b, 0) + 1
+            active_pairs.add((tid_a, tid_b))
+            active_pairs.add((tid_b, tid_a))
             created += 1
 
     # Pass 0: Guarantee matches for unrated/new players (matches_played==0 or rd>=300)
