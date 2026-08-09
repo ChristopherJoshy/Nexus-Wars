@@ -32,7 +32,7 @@ from nexus_wars import interpreter, Planet, Fleet, BOARD_SIZE, CENTER, SUN_RADIU
 # Configuration + state helpers
 # --------------------------------------------------------------------------
 DEFAULT_CONFIG = {
-    "episodeSteps": 250,
+    "episodeSteps": 150,
     "actTimeout": 1.0,
     "runTimeout": 510,
     "shipSpeed": 6.0,
@@ -387,7 +387,7 @@ def _main(argv):
     ap.add_argument("--seed", type=int, default=1)
     ap.add_argument("--agents", nargs=2, default=["random", "starter"])
     ap.add_argument("--out", default="replay.json")
-    ap.add_argument("--episodeSteps", type=int, default=250)
+    ap.add_argument("--episodeSteps", type=int, default=150)
     args = ap.parse_args(argv)
 
     config = dict(DEFAULT_CONFIG)
