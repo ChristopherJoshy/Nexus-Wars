@@ -323,6 +323,12 @@ def _enqueue_locked(conn, limit_override=None):
                 if tid_a == tid_b:
                     continue
 
+                # Top 3 Bracket Isolation: Top 3 teams ONLY fight against each other
+                is_top3_a = tid_a in top_3_ids
+                is_top3_b = tid_b in top_3_ids
+                if is_top3_a != is_top3_b:
+                    continue
+
                 if (tid_a, tid_b) in active_pairs:
                     continue
 
