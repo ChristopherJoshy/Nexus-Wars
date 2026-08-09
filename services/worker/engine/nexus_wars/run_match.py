@@ -32,7 +32,8 @@ from nexus_wars import interpreter, Planet, Fleet, BOARD_SIZE, CENTER, SUN_RADIU
 # Configuration + state helpers
 # --------------------------------------------------------------------------
 DEFAULT_CONFIG = {
-    "episodeSteps": 150,
+    "max_steps": 80,
+    "episodeSteps": 80,
     "actTimeout": 1.0,
     "runTimeout": 510,
     "shipSpeed": 6.0,
