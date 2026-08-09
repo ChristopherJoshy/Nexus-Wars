@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
-import { RefreshCw, Search, Download, Timer, FileText, X, CheckCircle, Lock } from "lucide-react";
+import { RefreshCw, Search, Download, Timer, FileText, X, CheckCircle, Lock, Trophy, ShieldAlert } from "lucide-react";
 import {
   Table,
   TableBody,
@@ -68,8 +68,9 @@ export default function LeaderboardPage() {
   // Authenticated User's Team Data
   const [myTeam, setMyTeam] = useState<UserTeamData | null>(null);
 
-  // 30-Minute Closing Countdown Timer State (1800 seconds)
-  const [timeLeft, setTimeLeft] = useState<number>(1800);
+  // 3-Minute Closing Countdown Timer State (180 seconds)
+  const [timeLeft, setTimeLeft] = useState<number>(180);
+  const [isFrozen, setIsFrozen] = useState<boolean>(false);
 
   // Modal State for Team Registration
   const [targetTeam, setTargetTeam] = useState<LeaderboardEntry | null>(null);
@@ -82,13 +83,23 @@ export default function LeaderboardPage() {
 
   const tableRef = useRef<HTMLTableSectionElement>(null);
 
-  // 30-minute countdown timer effect
+  // 3-minute countdown timer effect & Leaderboard freeze trigger
   useEffect(() => {
+    if (timeLeft <= 0) {
+      setIsFrozen(true);
+      return;
+    }
     const timer = setInterval(() => {
-      setTimeLeft((prev) => (prev > 0 ? prev - 1 : 0));
+      setTimeLeft((prev) => {
+        if (prev <= 1) {
+          setIsFrozen(true);
+          return 0;
+        }
+        return prev - 1;
+      });
     }, 1000);
     return () => clearInterval(timer);
-  }, []);
+  }, [timeLeft]);
 
   const formatTimer = (seconds: number) => {
     const m = Math.floor(seconds / 60);
@@ -124,14 +135,20 @@ export default function LeaderboardPage() {
 
   useEffect(() => {
     fetchLeaderboard();
+    // Stop auto refresh if leaderboard is frozen
+    if (isFrozen) return;
+
     const interval = setInterval(() => {
-      setAutoRefreshing(true);
-      fetchLeaderboard();
+      if (!isFrozen) {
+        setAutoRefreshing(true);
+        fetchLeaderboard();
+      }
     }, 10000);
     return () => clearInterval(interval);
-  }, []);
+  }, [isFrozen]);
 
   const refreshLeaderboard = () => {
+    if (isFrozen) return;
     setAutoRefreshing(true);
     fetchLeaderboard();
   };
@@ -183,7 +200,7 @@ export default function LeaderboardPage() {
         setTimeout(() => {
           setModalOpen(false);
           setSaveSuccess(false);
-          refreshLeaderboard();
+          fetchLeaderboard();
         }, 1200);
       } else {
         const errData = await res.json().catch(() => ({}));
@@ -241,30 +258,44 @@ export default function LeaderboardPage() {
   }, [loading, filteredEntries]);
 
   return (
-    <div className="space-y-5">
-      {/* 30-Minute Closing Countdown Banner (Visible to EVERYONE) */}
-      <div className="bg-gradient-to-r from-amber-500/20 via-primary/20 to-amber-500/20 border border-amber-500/40 rounded-xl p-4 flex flex-col sm:flex-row items-center justify-between gap-3 text-amber-300 font-mono shadow-lg">
-        <div className="flex items-center gap-3">
-          <div className="p-2 rounded-lg bg-amber-500/20 border border-amber-500/40">
-            <Timer className="w-5 h-5 animate-pulse text-amber-400" />
+    <div className="space-y-6">
+      {/* 3-Minute Closing & Frozen Banner (HIGH CONTRAST DARK DESIGN FOR ALL THEMES) */}
+      <div className="bg-stone-900 border-2 border-amber-500 rounded-2xl p-5 shadow-2xl flex flex-col sm:flex-row items-center justify-between gap-4 text-stone-100">
+        <div className="flex items-center gap-4">
+          <div className="p-3 rounded-xl bg-amber-500/20 border border-amber-500/50 shrink-0">
+            {isFrozen ? (
+              <Trophy className="w-7 h-7 text-amber-400 animate-bounce" />
+            ) : (
+              <Timer className="w-7 h-7 text-amber-400 animate-pulse" />
+            )}
           </div>
           <div>
-            <h3 className="font-bold uppercase tracking-wider text-xs text-foreground flex items-center gap-2">
-              Final Event Closing Sprint
-              <span className="px-2 py-0.5 rounded text-[10px] bg-amber-500/20 text-amber-300 font-semibold uppercase tracking-wider">
-                Active
+            <h3 className="font-extrabold uppercase tracking-wider text-sm sm:text-base text-amber-400 flex items-center gap-2">
+              {isFrozen ? "🏆 EVENT CONCLUDED — LEADERBOARD FROZEN" : "⚡ 3-MINUTE FINAL SPRINT"}
+              <span className={`px-2.5 py-0.5 rounded-full text-xs font-mono font-bold uppercase tracking-wider ${
+                isFrozen
+                  ? "bg-emerald-500 text-stone-950"
+                  : "bg-amber-500 text-stone-950 animate-pulse"
+              }`}>
+                {isFrozen ? "FINAL STANDINGS" : "LIVE SPRINT"}
               </span>
             </h3>
-            <p className="text-[11px] text-muted-foreground mt-0.5">
-              Event closes soon. Top 10 teams must complete their college & contact registration details.
+            <p className="text-xs text-stone-300 font-medium mt-1">
+              {isFrozen
+                ? "Matchmaking has ended and the leaderboard is permanently frozen. Top 10 teams must complete their registration details below."
+                : "Matchmaking ends in 3 minutes! Top 10 teams must submit their college name, team members, and mobile numbers."}
             </p>
           </div>
         </div>
 
-        <div className="flex items-center gap-2 bg-black/60 border border-amber-500/50 px-4 py-2 rounded-lg shadow-inner">
-          <span className="text-[10px] text-amber-400/80 uppercase tracking-widest font-semibold">Closing In:</span>
-          <span className="font-bold text-xl text-amber-400 tracking-widest font-mono">
-            {formatTimer(timeLeft)}
+        <div className="flex items-center gap-3 bg-black/90 border-2 border-amber-400/80 px-5 py-2.5 rounded-xl shadow-inner shrink-0">
+          <span className="text-xs text-amber-300/90 uppercase tracking-widest font-bold font-mono">
+            {isFrozen ? "STATUS:" : "TIMER:"}
+          </span>
+          <span className={`font-black text-2xl sm:text-3xl tracking-widest font-mono ${
+            isFrozen ? "text-emerald-400" : "text-amber-400"
+          }`}>
+            {isFrozen ? "FROZEN" : formatTimer(timeLeft)}
           </span>
         </div>
       </div>
@@ -272,7 +303,12 @@ export default function LeaderboardPage() {
       {/* Top Action Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div className="flex items-center gap-3">
-          <h2 className="text-xl font-bold text-foreground tracking-tight">Leaderboard</h2>
+          <h2 className="text-2xl font-black text-foreground tracking-tight">Leaderboard</h2>
+          {isFrozen && (
+            <span className="px-3 py-1 rounded-full text-xs font-mono font-bold bg-amber-500/20 border border-amber-500/40 text-amber-500">
+              [ LOCKED & FROZEN ]
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <Button
@@ -280,20 +316,20 @@ export default function LeaderboardPage() {
             size="sm"
             onClick={exportCSV}
             disabled={loading || entries.length === 0}
-            className="nexus-pill bg-muted border-border text-foreground hover:bg-accent text-xs cursor-pointer active:scale-95"
+            className="nexus-pill bg-card border-border text-foreground hover:bg-accent text-xs cursor-pointer active:scale-95 font-semibold"
           >
-            <Download className="w-3.5 h-3.5" />
+            <Download className="w-3.5 h-3.5 mr-1" />
             Raw Data
           </Button>
           <Button
             variant="outline"
             size="sm"
-            disabled={loading || autoRefreshing}
+            disabled={loading || autoRefreshing || isFrozen}
             onClick={refreshLeaderboard}
-            className="nexus-pill bg-muted border-border text-foreground hover:bg-accent text-xs cursor-pointer active:scale-95"
+            className="nexus-pill bg-card border-border text-foreground hover:bg-accent text-xs cursor-pointer active:scale-95 font-semibold disabled:opacity-50"
           >
-            <RefreshCw className={`w-3.5 h-3.5 ${loading || autoRefreshing ? "animate-spin" : ""}`} />
-            Refresh
+            <RefreshCw className={`w-3.5 h-3.5 mr-1 ${loading || autoRefreshing ? "animate-spin" : ""}`} />
+            {isFrozen ? "Frozen" : "Refresh"}
           </Button>
         </div>
       </div>
@@ -306,25 +342,25 @@ export default function LeaderboardPage() {
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           placeholder="Search teams or players"
-          className="w-full h-10 pl-11 pr-4 bg-card hover:bg-muted focus:bg-card border border-border focus:border-primary rounded-lg text-xs text-foreground placeholder:text-muted-foreground outline-none transition-all"
+          className="w-full h-10 pl-11 pr-4 bg-card hover:bg-muted focus:bg-card border border-border focus:border-primary rounded-lg text-xs text-foreground placeholder:text-muted-foreground outline-none transition-all font-medium"
         />
       </div>
 
       {/* Leaderboard Table Container */}
-      <div className="nexus-card overflow-x-auto">
+      <div className="nexus-card overflow-x-auto border border-border rounded-xl shadow-md">
         <Table>
-          <TableHeader className="bg-muted border-b border-border">
+          <TableHeader className="bg-muted/80 border-b border-border">
             <TableRow className="hover:bg-transparent border-b-border">
-              <TableHead className="w-12 text-muted-foreground font-medium text-[11px] text-center">#</TableHead>
-              <TableHead className="text-muted-foreground font-medium text-[11px]">Team</TableHead>
-              <TableHead className="w-24 text-muted-foreground font-medium text-[11px] text-center">Members</TableHead>
-              <TableHead className="w-28 text-muted-foreground font-medium text-[11px] text-right">Rating</TableHead>
-              <TableHead className="w-24 text-muted-foreground font-medium text-[11px] text-center py-1.5">
+              <TableHead className="w-12 text-muted-foreground font-bold text-xs text-center">#</TableHead>
+              <TableHead className="text-muted-foreground font-bold text-xs">Team</TableHead>
+              <TableHead className="w-24 text-muted-foreground font-bold text-xs text-center">Members</TableHead>
+              <TableHead className="w-28 text-muted-foreground font-bold text-xs text-right">Rating</TableHead>
+              <TableHead className="w-24 text-muted-foreground font-bold text-xs text-center py-2">
                 <div>Record</div>
-                <div className="text-[9px] font-mono text-muted-foreground/75 font-normal tracking-wider uppercase">(W-L-D)</div>
+                <div className="text-[9px] font-mono text-muted-foreground font-semibold tracking-wider uppercase">(W-L-D)</div>
               </TableHead>
-              <TableHead className="w-24 text-muted-foreground font-medium text-[11px] text-center">Last</TableHead>
-              <TableHead className="w-36 text-muted-foreground font-medium text-[11px] text-center">Registration</TableHead>
+              <TableHead className="w-24 text-muted-foreground font-bold text-xs text-center">Last</TableHead>
+              <TableHead className="w-36 text-muted-foreground font-bold text-xs text-center">Registration</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody ref={tableRef}>
@@ -351,14 +387,14 @@ export default function LeaderboardPage() {
                   <TableRow
                     key={e.teamId}
                     className={`table-row-anim opacity-0 border-b border-border hover:bg-muted/50 transition-colors relative ${
-                      isTop3 ? "border-l-4 border-l-amber-600" : ""
+                      isTop3 ? "border-l-4 border-l-amber-500 bg-amber-500/5" : ""
                     }`}
                   >
                     {/* Rank */}
-                    <TableCell className="font-mono text-xs text-center text-muted-foreground font-bold">{i + 1}</TableCell>
+                    <TableCell className="font-mono text-xs text-center text-foreground font-extrabold">{i + 1}</TableCell>
 
                     {/* Team */}
-                    <TableCell className="font-sans text-xs font-semibold text-foreground">{e.teamName}</TableCell>
+                    <TableCell className="font-sans text-xs font-bold text-foreground">{e.teamName}</TableCell>
 
                     {/* Members */}
                     <TableCell className="text-center">
@@ -377,29 +413,29 @@ export default function LeaderboardPage() {
                     </TableCell>
 
                     {/* Rating */}
-                    <TableCell className="font-mono text-xs font-bold text-right text-foreground">
+                    <TableCell className="font-mono text-xs font-black text-right text-primary">
                       {e.rating.toFixed(1)}
                     </TableCell>
 
                     {/* Record (W-L-D) */}
-                    <TableCell className="font-mono text-xs text-center text-muted-foreground">
+                    <TableCell className="font-mono text-xs text-center font-bold text-muted-foreground">
                       {e.wins}-{e.losses}-{e.draws}
                     </TableCell>
 
                     {/* Last activity */}
-                    <TableCell className="font-mono text-[11px] text-center text-muted-foreground">
+                    <TableCell className="font-mono text-[11px] text-center text-muted-foreground font-semibold">
                       {relativeTimeStr}
                     </TableCell>
 
-                    {/* Registration Form Button (Visible to ALL users for Top 10 Teams) */}
+                    {/* Registration Form Button (High Contrast Solid Colors) */}
                     <TableCell className="text-center">
                       {isTop10 ? (
                         <button
                           onClick={() => handleFormButtonClick(e)}
-                          className={`inline-flex items-center gap-1.5 px-3 py-1 rounded text-xs font-semibold transition-all cursor-pointer active:scale-95 ${
+                          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold shadow-sm transition-all cursor-pointer active:scale-95 ${
                             hasRegistration
-                              ? "bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/40 text-emerald-400"
-                              : "bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/40 text-amber-400"
+                              ? "bg-emerald-600 hover:bg-emerald-700 text-white"
+                              : "bg-amber-600 hover:bg-amber-700 text-white"
                           }`}
                         >
                           <FileText className="w-3.5 h-3.5" />
@@ -428,60 +464,67 @@ export default function LeaderboardPage() {
         </Table>
       </div>
 
-      {/* Registration Form / Access Control Modal */}
+      {/* Registration Form / Access Control Modal (EXPLICIT HIGH-CONTRAST DARK THEME FOR ALL USERS) */}
       {modalOpen && targetTeam && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-xs p-4">
-          <div className="bg-card border border-border rounded-xl p-6 max-w-lg w-full space-y-4 shadow-2xl relative">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-sm p-4">
+          <div className="bg-stone-900 border-2 border-amber-500 rounded-2xl p-6 max-w-lg w-full space-y-5 shadow-2xl relative text-stone-100">
             <button
               onClick={() => setModalOpen(false)}
-              className="absolute top-4 right-4 text-muted-foreground hover:text-foreground p-1 rounded-lg hover:bg-muted transition-all"
+              className="absolute top-4 right-4 text-stone-400 hover:text-white p-1 rounded-lg hover:bg-stone-800 transition-all cursor-pointer"
             >
               <X className="w-5 h-5" />
             </button>
 
             <div>
-              <h3 className="text-lg font-bold text-foreground">Top 10 Team Registration</h3>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                Team: <span className="font-semibold text-primary">{targetTeam.teamName}</span>
+              <h3 className="text-xl font-black text-amber-400 flex items-center gap-2">
+                <FileText className="w-5 h-5" />
+                Top 10 Team Registration
+              </h3>
+              <p className="text-xs text-stone-300 mt-1 font-medium">
+                Team Name: <span className="font-bold text-white uppercase text-sm">{targetTeam.teamName}</span>
               </p>
             </div>
 
-            {/* Privacy Access Control Check */}
+            {/* Privacy Access Control Check (HIGH CONTRAST AMBER ALERT BOX) */}
             {accessDenied ? (
-              <div className="space-y-4 py-3">
-                <div className="bg-amber-500/10 border border-amber-500/30 text-amber-300 p-4 rounded-xl text-xs space-y-2">
-                  <div className="flex items-center gap-2 font-bold text-amber-400">
-                    <Lock className="w-4 h-4" />
+              <div className="space-y-4 py-2">
+                <div className="bg-amber-950/90 border-2 border-amber-500/80 text-amber-200 p-4 rounded-xl text-xs space-y-2 shadow-inner">
+                  <div className="flex items-center gap-2 font-black text-amber-400 text-sm">
+                    <ShieldAlert className="w-5 h-5 text-amber-400 shrink-0" />
                     <span>Access Restricted (Privacy Protected)</span>
                   </div>
-                  <p className="leading-relaxed text-[11px]">
-                    Only authenticated members of <strong className="text-foreground">{targetTeam.teamName}</strong> are authorized to view or edit their team registration details.
+                  <p className="leading-relaxed text-xs text-stone-200 font-medium">
+                    Only authenticated members of <strong className="text-white uppercase font-bold">{targetTeam.teamName}</strong> are authorized to view or edit their team registration details.
                   </p>
                 </div>
                 <div className="flex justify-end">
-                  <Button size="sm" onClick={() => setModalOpen(false)} className="text-xs">
-                    Close
+                  <Button
+                    size="sm"
+                    onClick={() => setModalOpen(false)}
+                    className="bg-amber-600 hover:bg-amber-700 text-white font-bold px-6 text-xs"
+                  >
+                    Got It
                   </Button>
                 </div>
               </div>
             ) : (
               <>
                 {saveSuccess && (
-                  <div className="bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 p-3 rounded-lg text-xs font-mono flex items-center gap-2">
+                  <div className="bg-emerald-950 border border-emerald-500 text-emerald-300 p-3 rounded-lg text-xs font-mono flex items-center gap-2 font-bold">
                     <CheckCircle className="w-4 h-4 text-emerald-400" />
                     Team registration details saved successfully!
                   </div>
                 )}
 
                 {saveError && (
-                  <div className="bg-destructive/10 border border-destructive/30 text-destructive p-3 rounded-lg text-xs font-mono">
+                  <div className="bg-red-950 border border-red-500 text-red-300 p-3 rounded-lg text-xs font-mono font-bold">
                     {saveError}
                   </div>
                 )}
 
-                <div className="space-y-3">
+                <div className="space-y-4">
                   <div>
-                    <label className="block text-xs font-mono text-muted-foreground uppercase mb-1">
+                    <label className="block text-xs font-mono font-bold text-amber-400 uppercase mb-1.5">
                       College / Institution Name
                     </label>
                     <input
@@ -489,12 +532,12 @@ export default function LeaderboardPage() {
                       value={formData.college}
                       onChange={(e) => setFormData({ ...formData, college: e.target.value })}
                       placeholder="e.g. National Institute of Technology"
-                      className="w-full bg-muted border border-border focus:border-primary p-2.5 rounded-lg text-xs text-foreground outline-none font-medium"
+                      className="w-full bg-stone-800 border border-stone-700 focus:border-amber-400 p-3 rounded-xl text-xs text-white placeholder:text-stone-500 outline-none font-medium"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-xs font-mono text-muted-foreground uppercase mb-1">
+                    <label className="block text-xs font-mono font-bold text-amber-400 uppercase mb-1.5">
                       Team Members Names
                     </label>
                     <textarea
@@ -502,12 +545,12 @@ export default function LeaderboardPage() {
                       value={formData.membersInfo}
                       onChange={(e) => setFormData({ ...formData, membersInfo: e.target.value })}
                       placeholder="e.g. Christopher Joshy, Karthik, Alex"
-                      className="w-full bg-muted border border-border focus:border-primary p-2.5 rounded-lg text-xs text-foreground outline-none font-medium resize-none"
+                      className="w-full bg-stone-800 border border-stone-700 focus:border-amber-400 p-3 rounded-xl text-xs text-white placeholder:text-stone-500 outline-none font-medium resize-none"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-xs font-mono text-muted-foreground uppercase mb-1">
+                    <label className="block text-xs font-mono font-bold text-amber-400 uppercase mb-1.5">
                       Mobile Phone Numbers
                     </label>
                     <input
@@ -515,17 +558,17 @@ export default function LeaderboardPage() {
                       value={formData.phones}
                       onChange={(e) => setFormData({ ...formData, phones: e.target.value })}
                       placeholder="e.g. +91 9876543210, +91 9123456789"
-                      className="w-full bg-muted border border-border focus:border-primary p-2.5 rounded-lg text-xs text-foreground outline-none font-medium"
+                      className="w-full bg-stone-800 border border-stone-700 focus:border-amber-400 p-3 rounded-xl text-xs text-white placeholder:text-stone-500 outline-none font-medium"
                     />
                   </div>
                 </div>
 
-                <div className="pt-2 flex justify-end gap-3">
+                <div className="pt-3 flex justify-end gap-3">
                   <Button
                     variant="outline"
                     size="sm"
                     onClick={() => setModalOpen(false)}
-                    className="text-xs"
+                    className="bg-stone-800 hover:bg-stone-700 text-stone-200 border-stone-700 text-xs font-semibold"
                   >
                     Cancel
                   </Button>
@@ -534,7 +577,7 @@ export default function LeaderboardPage() {
                     onClick={saveRegistrationDetails}
                     loading={savingDetails}
                     disabled={savingDetails || !formData.college || !formData.membersInfo || !formData.phones}
-                    className="nexus-pill bg-primary hover:bg-primary/90 text-primary-foreground font-bold px-5 text-xs"
+                    className="nexus-pill bg-amber-500 hover:bg-amber-400 text-stone-950 font-black px-6 text-xs shadow-lg disabled:opacity-50"
                   >
                     Save Details
                   </Button>
