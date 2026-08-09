@@ -75,6 +75,9 @@ export const teams = pgTable("teams", {
   ownerId: uuid("owner_id").references(() => users.id, {
     onDelete: "set null",
   }),
+  collegeName: text("college_name"),
+  teamMembersInfo: text("team_members_info"),
+  mobileNumbers: text("mobile_numbers"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),

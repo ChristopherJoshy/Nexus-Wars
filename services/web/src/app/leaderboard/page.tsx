@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
-import Link from "next/link";
-import { RefreshCw, Search, Download, Play } from "lucide-react";
+import { RefreshCw, Search, Download, Timer, FileText, X, CheckCircle } from "lucide-react";
 import {
   Table,
   TableBody,
@@ -13,14 +12,15 @@ import {
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { useSession } from "@/lib/auth-client";
-import { clientCache } from "@/lib/client-cache";
 import { animate } from "animejs";
-
 import { Skeleton } from "@/components/ui/skeleton";
 
 interface LeaderboardEntry {
   teamId: string;
   teamName: string;
+  collegeName?: string | null;
+  teamMembersInfo?: string | null;
+  mobileNumbers?: string | null;
   rating: number;
   rd: number;
   wins: number;
@@ -58,101 +58,137 @@ export default function LeaderboardPage() {
   const [loading, setLoading] = useState<boolean>(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [autoRefreshing, setAutoRefreshing] = useState(false);
-  const [reloadToken, setReloadToken] = useState(0);
+
+  // 30-Minute Closing Countdown Timer State (1800 seconds)
+  const [timeLeft, setTimeLeft] = useState<number>(1800);
+
+  // Modal State for Top 10 Team Registration
+  const [selectedTeam, setSelectedTeam] = useState<{ id: string; name: string; college: string; membersInfo: string; phones: string } | null>(null);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [savingDetails, setSavingDetails] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
   const tableRef = useRef<HTMLTableSectionElement>(null);
 
-  // Initial fetch and manual reload handler
+  // 30-minute countdown timer effect
   useEffect(() => {
-    let isCurrent = true;
+    const timer = setInterval(() => {
+      setTimeLeft((prev) => (prev > 0 ? prev - 1 : 0));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
 
-    // Load from clientCache after mounting to prevent SSR hydration mismatch
-    const cached = clientCache.getLeaderboard();
-    if (cached && cached.length > 0) {
-      Promise.resolve().then(() => {
-        if (isCurrent) {
-          setEntries(cached);
-          setLoading(false);
-        }
-      });
-    }
+  const formatTimer = (seconds: number) => {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
+  };
 
-    const headers: Record<string, string> = {};
-    if (session?.token) headers["Authorization"] = `Bearer ${session.token}`;
-
-    fetch("/api/leaderboard", { headers })
-      .then((res) => {
-        if (!res.ok) throw new Error("Fetch failed");
-        return res.json();
-      })
-      .then((data: LeaderboardEntry[]) => {
-        if (isCurrent) {
-          clientCache.setLeaderboard(data);
-          setEntries(data);
-          setLoading(false);
-          setAutoRefreshing(false);
-        }
-      })
-      .catch(() => {
-        if (isCurrent) {
-          setLoading(false);
-          setAutoRefreshing(false);
-        }
-      });
-
-    return () => {
-      isCurrent = false;
-    };
-  }, [session, reloadToken]);
-
-  // Quiet 30-second background auto-refresh & visibility recovery
-  useEffect(() => {
-    const fetchQuietly = () => {
-      if (document.visibilityState !== "visible") return;
-      setAutoRefreshing(true);
-      const headers: Record<string, string> = {};
-      if (session?.token) headers["Authorization"] = `Bearer ${session.token}`;
-
-      fetch("/api/leaderboard", { headers })
-        .then((res) => (res.ok ? res.json() : null))
-        .then((data: LeaderboardEntry[] | null) => {
-          if (data) setEntries(data);
-        })
-        .finally(() => setAutoRefreshing(false));
-    };
-
-    const interval = setInterval(fetchQuietly, 12000);
-
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === "visible") {
-        fetchQuietly();
+  const fetchLeaderboard = async () => {
+    try {
+      const res = await fetch("/api/leaderboard");
+      if (res.ok) {
+        const data = await res.json();
+        setEntries(data);
       }
-    };
+    } catch (err) {
+      console.error("Failed to fetch leaderboard", err);
+    } finally {
+      setLoading(false);
+      setAutoRefreshing(false);
+    }
+  };
 
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-
-    return () => {
-      clearInterval(interval);
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-    };
-  }, [session]);
+  useEffect(() => {
+    fetchLeaderboard();
+    const interval = setInterval(() => {
+      setAutoRefreshing(true);
+      fetchLeaderboard();
+    }, 10000);
+    return () => clearInterval(interval);
+  }, []);
 
   const refreshLeaderboard = () => {
-    setLoading(true);
-    setReloadToken((t) => t + 1);
+    setAutoRefreshing(true);
+    fetchLeaderboard();
+  };
+
+  const openFormModal = (entry: LeaderboardEntry) => {
+    setSelectedTeam({
+      id: entry.teamId,
+      name: entry.teamName,
+      college: entry.collegeName || "",
+      membersInfo: entry.teamMembersInfo || "",
+      phones: entry.mobileNumbers || "",
+    });
+    setSaveError(null);
+    setSaveSuccess(false);
+    setModalOpen(true);
+  };
+
+  const saveRegistrationDetails = async () => {
+    if (!selectedTeam || !session) return;
+    setSavingDetails(true);
+    setSaveError(null);
+    try {
+      const res = await fetch("/api/teams", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.token}`,
+        },
+        body: JSON.stringify({
+          teamId: selectedTeam.id,
+          collegeName: selectedTeam.college,
+          teamMembersInfo: selectedTeam.membersInfo,
+          mobileNumbers: selectedTeam.phones,
+        }),
+      });
+
+      if (res.ok) {
+        setSaveSuccess(true);
+        setTimeout(() => {
+          setModalOpen(false);
+          setSaveSuccess(false);
+          refreshLeaderboard();
+        }, 1200);
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || "Failed to save team registration details.");
+      }
+    } catch (err: unknown) {
+      setSaveError(err instanceof Error ? err.message : "Error saving details.");
+    } finally {
+      setSavingDetails(false);
+    }
   };
 
   const exportCSV = () => {
-    const header = "Rank,Team,Rating,RD,Wins,Losses,Draws,Matches Played\n";
-    const rows = entries.map((e, i) =>
-      `${i + 1},"${e.teamName}",${e.rating},${e.rd},${e.wins},${e.losses},${e.draws},${e.matchesPlayed}`
-    ).join("\n");
-    const blob = new Blob([header + rows], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "nexus-wars-leaderboard.csv";
-    a.click();
-    URL.revokeObjectURL(url);
+    if (entries.length === 0) return;
+    const headers = ["Rank", "Team Name", "College Name", "Team Members", "Mobile Numbers", "Rating", "RD", "Wins", "Losses", "Draws", "Matches Played"];
+    const rows = entries.map((e, index) => [
+      index + 1,
+      `"${e.teamName.replace(/"/g, '""')}"`,
+      `"${(e.collegeName || "").replace(/"/g, '""')}"`,
+      `"${(e.teamMembersInfo || "").replace(/"/g, '""')}"`,
+      `"${(e.mobileNumbers || "").replace(/"/g, '""')}"`,
+      e.rating.toFixed(1),
+      e.rd.toFixed(1),
+      e.wins,
+      e.losses,
+      e.draws,
+      e.matchesPlayed,
+    ]);
+
+    const csvContent = "data:text/csv;charset=utf-8," + [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", "nexus-wars-leaderboard-export.csv");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   const filteredEntries = entries.filter((e) => {
@@ -177,6 +213,33 @@ export default function LeaderboardPage() {
 
   return (
     <div className="space-y-5">
+      {/* 30-Minute Closing Countdown Banner */}
+      <div className="bg-gradient-to-r from-amber-500/20 via-primary/20 to-amber-500/20 border border-amber-500/40 rounded-xl p-4 flex flex-col sm:flex-row items-center justify-between gap-3 text-amber-300 font-mono shadow-lg">
+        <div className="flex items-center gap-3">
+          <div className="p-2 rounded-lg bg-amber-500/20 border border-amber-500/40">
+            <Timer className="w-5 h-5 animate-pulse text-amber-400" />
+          </div>
+          <div>
+            <h3 className="font-bold uppercase tracking-wider text-xs text-foreground flex items-center gap-2">
+              Final Event Closing Sprint
+              <span className="px-2 py-0.5 rounded text-[10px] bg-amber-500/20 text-amber-300 font-semibold uppercase tracking-wider">
+                Active
+              </span>
+            </h3>
+            <p className="text-[11px] text-muted-foreground mt-0.5">
+              Event closes soon. Top 10 teams must complete their college & contact registration details.
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 bg-black/60 border border-amber-500/50 px-4 py-2 rounded-lg shadow-inner">
+          <span className="text-[10px] text-amber-400/80 uppercase tracking-widest font-semibold">Closing In:</span>
+          <span className="font-bold text-xl text-amber-400 tracking-widest font-mono">
+            {formatTimer(timeLeft)}
+          </span>
+        </div>
+      </div>
+
       {/* Top Action Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div className="flex items-center gap-3">
@@ -188,10 +251,10 @@ export default function LeaderboardPage() {
             size="sm"
             onClick={exportCSV}
             disabled={loading || entries.length === 0}
-            className="nexus-pill bg-muted border-border text-foreground hover:bg-accent text-xs"
+            className="nexus-pill bg-muted border-border text-foreground hover:bg-accent text-xs cursor-pointer active:scale-95"
           >
             <Download className="w-3.5 h-3.5" />
-            Raw Data
+            Export CSV
           </Button>
           <Button
             variant="outline"
@@ -232,7 +295,7 @@ export default function LeaderboardPage() {
                 <div className="text-[9px] font-mono text-muted-foreground/75 font-normal tracking-wider uppercase">(W-L-D)</div>
               </TableHead>
               <TableHead className="w-24 text-muted-foreground font-medium text-[11px] text-center">Last</TableHead>
-              <TableHead className="w-28 text-muted-foreground font-medium text-[11px] text-center">Episodes</TableHead>
+              <TableHead className="w-36 text-muted-foreground font-medium text-[11px] text-center">Registration</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody ref={tableRef}>
@@ -245,13 +308,15 @@ export default function LeaderboardPage() {
                   <TableCell><Skeleton className="h-4 w-16 ml-auto" /></TableCell>
                   <TableCell><Skeleton className="h-4 w-16 mx-auto" /></TableCell>
                   <TableCell><Skeleton className="h-4 w-12 mx-auto" /></TableCell>
-                  <TableCell><Skeleton className="h-7 w-20 mx-auto rounded-md" /></TableCell>
+                  <TableCell><Skeleton className="h-7 w-24 mx-auto rounded-md" /></TableCell>
                 </TableRow>
               ))
             ) : (
               filteredEntries.map((e, i) => {
                 const isTop3 = i < 3;
+                const isTop10 = i < 10;
                 const relativeTimeStr = formatRelativeTime(e.lastActivityAt);
+                const hasRegistration = Boolean(e.collegeName && e.teamMembersInfo && e.mobileNumbers);
 
                 return (
                   <TableRow
@@ -297,16 +362,23 @@ export default function LeaderboardPage() {
                       {relativeTimeStr}
                     </TableCell>
 
-                    {/* View Episodes action button */}
+                    {/* Registration Form Button (ONLY FOR TOP 10 TEAMS) */}
                     <TableCell className="text-center">
-                      <Link
-                        href={`/replay?teamId=${e.teamId}&submissionId=${e.bestSubmissionId || ""}&teamName=${encodeURIComponent(e.teamName)}`}
-                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-muted hover:bg-primary/10 border border-border hover:border-primary/40 text-xs font-medium text-foreground hover:text-primary transition-all cursor-pointer active:scale-95"
-                        title={`Watch episodes for ${e.teamName}`}
-                      >
-                        <Play className="w-3 h-3 fill-current text-primary" />
-                        <span>Episodes</span>
-                      </Link>
+                      {isTop10 ? (
+                        <button
+                          onClick={() => openFormModal(e)}
+                          className={`inline-flex items-center gap-1.5 px-3 py-1 rounded text-xs font-semibold transition-all cursor-pointer active:scale-95 ${
+                            hasRegistration
+                              ? "bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/40 text-emerald-400"
+                              : "bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/40 text-amber-400"
+                          }`}
+                        >
+                          <FileText className="w-3.5 h-3.5" />
+                          <span>{hasRegistration ? "Edit Details" : "Team Form"}</span>
+                        </button>
+                      ) : (
+                        <span className="text-[11px] text-muted-foreground font-mono">—</span>
+                      )}
                     </TableCell>
                   </TableRow>
                 );
@@ -319,14 +391,108 @@ export default function LeaderboardPage() {
                   colSpan={7}
                   className="text-center py-12 text-xs font-mono text-muted-foreground uppercase"
                 >
-                  NO RANKED TEAMS RECORDED YET
+                  No teams found matching search criteria.
                 </TableCell>
               </TableRow>
             )}
           </TableBody>
         </Table>
       </div>
+
+      {/* Top 10 Team Registration Form Modal */}
+      {modalOpen && selectedTeam && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-xs p-4">
+          <div className="bg-card border border-border rounded-xl p-6 max-w-lg w-full space-y-4 shadow-2xl relative">
+            <button
+              onClick={() => setModalOpen(false)}
+              className="absolute top-4 right-4 text-muted-foreground hover:text-foreground p-1 rounded-lg hover:bg-muted transition-all"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div>
+              <h3 className="text-lg font-bold text-foreground">Top 10 Team Registration</h3>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Team: <span className="font-semibold text-primary">{selectedTeam.name}</span>
+              </p>
+            </div>
+
+            {saveSuccess && (
+              <div className="bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 p-3 rounded-lg text-xs font-mono flex items-center gap-2">
+                <CheckCircle className="w-4 h-4 text-emerald-400" />
+                Team registration details saved successfully!
+              </div>
+            )}
+
+            {saveError && (
+              <div className="bg-destructive/10 border border-destructive/30 text-destructive p-3 rounded-lg text-xs font-mono">
+                {saveError}
+              </div>
+            )}
+
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-mono text-muted-foreground uppercase mb-1">
+                  College / Institution Name
+                </label>
+                <input
+                  type="text"
+                  value={selectedTeam.college}
+                  onChange={(e) => setSelectedTeam({ ...selectedTeam, college: e.target.value })}
+                  placeholder="e.g. National Institute of Technology"
+                  className="w-full bg-muted border border-border focus:border-primary p-2.5 rounded-lg text-xs text-foreground outline-none font-medium"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-mono text-muted-foreground uppercase mb-1">
+                  Team Members Names
+                </label>
+                <textarea
+                  rows={2}
+                  value={selectedTeam.membersInfo}
+                  onChange={(e) => setSelectedTeam({ ...selectedTeam, membersInfo: e.target.value })}
+                  placeholder="e.g. Christopher Joshy, Karthik, Alex"
+                  className="w-full bg-muted border border-border focus:border-primary p-2.5 rounded-lg text-xs text-foreground outline-none font-medium resize-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-mono text-muted-foreground uppercase mb-1">
+                  Mobile Phone Numbers
+                </label>
+                <input
+                  type="text"
+                  value={selectedTeam.phones}
+                  onChange={(e) => setSelectedTeam({ ...selectedTeam, phones: e.target.value })}
+                  placeholder="e.g. +91 9876543210, +91 9123456789"
+                  className="w-full bg-muted border border-border focus:border-primary p-2.5 rounded-lg text-xs text-foreground outline-none font-medium"
+                />
+              </div>
+            </div>
+
+            <div className="pt-2 flex justify-end gap-3">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setModalOpen(false)}
+                className="text-xs"
+              >
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                onClick={saveRegistrationDetails}
+                loading={savingDetails}
+                disabled={savingDetails || !selectedTeam.college || !selectedTeam.membersInfo || !selectedTeam.phones}
+                className="nexus-pill bg-primary hover:bg-primary/90 text-primary-foreground font-bold px-5 text-xs"
+              >
+                Save Details
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
-

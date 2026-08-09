@@ -543,7 +543,6 @@ export default function SubmissionsPage() {
                 <div className="text-[9px] font-mono text-muted-foreground/75 font-normal tracking-wider uppercase">(W-L-D)</div>
               </TableHead>
               <TableHead className="w-24 text-muted-foreground font-medium text-[11px] text-center">Uploaded</TableHead>
-              <TableHead className="w-28 text-muted-foreground font-medium text-[11px] text-center">Episodes</TableHead>
               <TableHead className="w-24 text-muted-foreground font-medium text-[11px] text-center">Download</TableHead>
             </TableRow>
           </TableHeader>
@@ -557,7 +556,6 @@ export default function SubmissionsPage() {
                   <TableCell><Skeleton className="h-4 w-12 ml-auto" /></TableCell>
                   <TableCell><Skeleton className="h-4 w-14 mx-auto" /></TableCell>
                   <TableCell><Skeleton className="h-4 w-12 mx-auto" /></TableCell>
-                  <TableCell><Skeleton className="h-7 w-20 mx-auto rounded-md" /></TableCell>
                   <TableCell><Skeleton className="h-7 w-20 mx-auto rounded-md" /></TableCell>
                 </TableRow>
               ))
@@ -626,18 +624,6 @@ export default function SubmissionsPage() {
                     {/* Uploaded Relative Time */}
                     <TableCell className="font-mono text-[11px] text-center text-muted-foreground">
                       {relativeTimeStr}
-                    </TableCell>
-
-                    {/* Episodes Action Button */}
-                    <TableCell className="text-center">
-                      <Link
-                        href={`/replay?submissionId=${s.id}&artifact=${encodeURIComponent(filename)}`}
-                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-muted hover:bg-primary/10 border border-border hover:border-primary/40 text-xs font-medium text-foreground hover:text-primary transition-all cursor-pointer active:scale-95"
-                        title={`Watch episodes for ${filename}`}
-                      >
-                        <Play className="w-3 h-3 fill-current text-primary" />
-                        <span>Episodes</span>
-                      </Link>
                     </TableCell>
 
                     {/* Download Bot Button */}

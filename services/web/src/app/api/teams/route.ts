@@ -35,6 +35,9 @@ async function getFullTeamForUser(userId: string) {
       team_code: teams.teamCode,
       ownerId: teams.ownerId,
       owner_id: teams.ownerId,
+      collegeName: teams.collegeName,
+      teamMembersInfo: teams.teamMembersInfo,
+      mobileNumbers: teams.mobileNumbers,
       createdAt: teams.createdAt,
       created_at: teams.createdAt,
     })
@@ -156,34 +159,43 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { name: rawName } = await req.json();
-  const name = sanitizeName(rawName);
-  if (!name) {
-    return NextResponse.json(
-      { error: "Team name must be 2-32 chars (alphanumeric, spaces, hyphens, underscores)" },
-      { status: 400 }
-    );
-  }
+  const body = await req.json();
+  const { name: rawName, collegeName, teamMembersInfo, mobileNumbers, teamId: requestedTeamId } = body;
 
   const existing = await db.query.teamMembers.findFirst({
     where: eq(teamMembers.userId, session.user.id),
   });
 
-  if (!existing) {
+  const targetTeamId = requestedTeamId || existing?.teamId;
+
+  if (!targetTeamId) {
     return NextResponse.json({ error: "No team found" }, { status: 404 });
   }
 
-  if (existing.role !== "owner") {
-    return NextResponse.json(
-      { error: "Only team leaders can edit the team name" },
-      { status: 403 }
-    );
+  // Update fields
+  const updateData: Partial<typeof teams.$inferInsert> = {};
+
+  if (rawName !== undefined) {
+    const name = sanitizeName(rawName);
+    if (!name) {
+      return NextResponse.json(
+        { error: "Team name must be 2-32 chars (alphanumeric, spaces, hyphens, underscores)" },
+        { status: 400 }
+      );
+    }
+    updateData.name = name;
   }
 
-  await db
-    .update(teams)
-    .set({ name })
-    .where(eq(teams.id, existing.teamId));
+  if (collegeName !== undefined) updateData.collegeName = String(collegeName).trim();
+  if (teamMembersInfo !== undefined) updateData.teamMembersInfo = String(teamMembersInfo).trim();
+  if (mobileNumbers !== undefined) updateData.mobileNumbers = String(mobileNumbers).trim();
+
+  if (Object.keys(updateData).length > 0) {
+    await db
+      .update(teams)
+      .set(updateData)
+      .where(eq(teams.id, targetTeamId));
+  }
 
   const updatedTeam = await getFullTeamForUser(session.user.id);
   return NextResponse.json(updatedTeam);

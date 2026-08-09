@@ -25,6 +25,9 @@ export default function TeamPage() {
   const { data: session, isPending: sessionPending } = useSession();
   const [team, setTeam] = useState<Team | null>(null);
   const [teamName, setTeamName] = useState("");
+  const [collegeName, setCollegeName] = useState("");
+  const [teamMembersInfo, setTeamMembersInfo] = useState("");
+  const [mobileNumbers, setMobileNumbers] = useState("");
   const [joinCode, setJoinCode] = useState("");
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -55,6 +58,9 @@ export default function TeamPage() {
         setErrorMsg(null);
         setTeam(data);
         setTeamName(data.name || "");
+        setCollegeName(data.collegeName || "");
+        setTeamMembersInfo(data.teamMembersInfo || "");
+        setMobileNumbers(data.mobileNumbers || "");
       })
       .catch(() => setTeam(null))
       .finally(() => setLoading(false));
@@ -72,12 +78,20 @@ export default function TeamPage() {
           "Content-Type": "application/json",
           Authorization: `Bearer ${session.token}`,
         },
-        body: JSON.stringify({ name: teamName }),
+        body: JSON.stringify({
+          name: teamName,
+          collegeName,
+          teamMembersInfo,
+          mobileNumbers,
+        }),
       });
       if (res.ok) {
         const updated = await res.json();
         setTeam(updated);
         setTeamName(updated.name || "");
+        setCollegeName(updated.collegeName || "");
+        setTeamMembersInfo(updated.teamMembersInfo || "");
+        setMobileNumbers(updated.mobileNumbers || "");
         setSavedSuccess(true);
         setTimeout(() => setSavedSuccess(false), 2500);
       } else {
@@ -195,6 +209,48 @@ export default function TeamPage() {
               This name appears on the leaderboard.
             </span>
           )}
+
+          {/* College Name */}
+          <div className="relative border border-border focus-within:border-primary rounded-lg p-3 bg-card transition-all max-w-lg mt-3">
+            <label className="absolute -top-2.5 left-3 px-1.5 bg-card text-[10px] font-mono text-muted-foreground uppercase tracking-wider font-semibold">
+              College / Institution Name
+            </label>
+            <input
+              type="text"
+              value={collegeName}
+              onChange={(e) => setCollegeName(e.target.value)}
+              placeholder="e.g. National Institute of Technology"
+              className="w-full bg-transparent text-xs text-foreground outline-none font-sans font-medium"
+            />
+          </div>
+
+          {/* Team Members Info */}
+          <div className="relative border border-border focus-within:border-primary rounded-lg p-3 bg-card transition-all max-w-lg mt-3">
+            <label className="absolute -top-2.5 left-3 px-1.5 bg-card text-[10px] font-mono text-muted-foreground uppercase tracking-wider font-semibold">
+              Team Members Names
+            </label>
+            <textarea
+              rows={2}
+              value={teamMembersInfo}
+              onChange={(e) => setTeamMembersInfo(e.target.value)}
+              placeholder="e.g. Christopher Joshy, Karthik, Alex"
+              className="w-full bg-transparent text-xs text-foreground outline-none font-sans font-medium resize-none"
+            />
+          </div>
+
+          {/* Mobile Numbers */}
+          <div className="relative border border-border focus-within:border-primary rounded-lg p-3 bg-card transition-all max-w-lg mt-3">
+            <label className="absolute -top-2.5 left-3 px-1.5 bg-card text-[10px] font-mono text-muted-foreground uppercase tracking-wider font-semibold">
+              Mobile Phone Numbers
+            </label>
+            <input
+              type="text"
+              value={mobileNumbers}
+              onChange={(e) => setMobileNumbers(e.target.value)}
+              placeholder="e.g. +91 9876543210, +91 9123456789"
+              className="w-full bg-transparent text-xs text-foreground outline-none font-sans font-medium"
+            />
+          </div>
         </div>
       </div>
 

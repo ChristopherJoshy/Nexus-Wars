@@ -45,9 +45,38 @@ export async function GET(req: NextRequest) {
   });
   const paused = parsePausedValue(row?.value);
 
+  // Fetch all registered teams with rating and contact info
+  const allTeams = await db.execute<{
+    id: string;
+    name: string;
+    college_name: string | null;
+    team_members_info: string | null;
+    mobile_numbers: string | null;
+    rating: number | null;
+    created_at: string;
+  }>(`
+    SELECT t.id, t.name, t.college_name, t.team_members_info, t.mobile_numbers,
+           COALESCE(r.rating, 600.0) as rating, t.created_at
+    FROM teams t
+    LEFT JOIN ratings r ON t.id = r.team_id
+    ORDER BY r.rating DESC NULLS LAST;
+  `);
+
+  const formattedTeams = (Array.isArray(allTeams) ? allTeams : []).map((t, idx) => ({
+    id: t.id,
+    rank: idx + 1,
+    name: t.name,
+    collegeName: t.college_name || "N/A",
+    teamMembersInfo: t.team_members_info || "N/A",
+    mobileNumbers: t.mobile_numbers || "N/A",
+    rating: typeof t.rating === "number" ? Math.round(t.rating * 100) / 100 : 600.0,
+    createdAt: t.created_at,
+  }));
+
   return NextResponse.json({
     submissionsPaused: paused,
     adminEmail: admin.user.email,
+    teams: formattedTeams,
   });
 }
 
