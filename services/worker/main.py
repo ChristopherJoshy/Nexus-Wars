@@ -177,7 +177,7 @@ def main():
     wdog.start()
 
     sem = threading.Semaphore(MAX_CONCURRENT)
-    matchmake_every = max(1, int(10 / POLL_INTERVAL))  # ~every 10s
+    matchmake_every = max(1, int(3 / POLL_INTERVAL))  # ~every 3s
     ticks = matchmake_every - 1  # run matchmaker immediately on first tick
     # Proactive restart every 4 hours to flush zombie processes before PID limit
     restart_after_secs = 4 * 60 * 60

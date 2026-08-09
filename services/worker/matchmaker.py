@@ -28,17 +28,17 @@ def _release_lock(conn):
 
 def _compute_dynamic_params(n_teams, rating_spread):
     """All matchmaking thresholds derived from live leaderboard state."""
-    # Pair cooldown: 1.0 to 3.0 minutes to guarantee team variety and opponent rotation
-    pair_cooldown = max(1.5, min(5.0, n_teams * 0.20))
+    # Ultra-fast pair cooldown for final tournament rush (~12 seconds)
+    pair_cooldown = max(0.2, min(1.0, n_teams * 0.05))
     
-    # Minimal agent cooldown: 3 seconds (0.05 min) so bots re-enter matching as soon as their match ends
-    agent_cooldown = 0.05
+    # Ultra-fast agent cooldown: 0.6 seconds (0.01 min)
+    agent_cooldown = 0.01
     
-    soft_gap = max(50.0, min(120.0, rating_spread * RATING_GAP_SOFT_FACTOR))
-    hard_gap = max(100.0, min(200.0, rating_spread * RATING_GAP_HARD_FACTOR))
+    soft_gap = max(50.0, min(150.0, rating_spread * RATING_GAP_SOFT_FACTOR))
+    hard_gap = max(120.0, min(250.0, rating_spread * RATING_GAP_HARD_FACTOR))
     
-    per_team_hourly_cap = 999999  # Dynamic load balancing handled by load_penalty
-    matches_per_cycle = max(4, n_teams)
+    per_team_hourly_cap = 999999
+    matches_per_cycle = max(20, n_teams * 4)
     return pair_cooldown, agent_cooldown, soft_gap, hard_gap, per_team_hourly_cap, matches_per_cycle
 
 
