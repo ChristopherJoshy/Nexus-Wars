@@ -211,6 +211,15 @@ def _enqueue_locked(conn, limit_override=None):
     if not rows:
         return 0
 
+    # Top 12 Teams restriction for final tournament hours
+    top_teams = query(conn, "SELECT team_id FROM ratings ORDER BY rating DESC LIMIT 12", ())
+    top_12_ids = {r[0] for r in top_teams}
+    top_3_ids = {r[0] for r in top_teams[:3]}
+
+    rows = [r for r in rows if r[0] in top_12_ids]
+    if not rows:
+        return 0
+
     unique_teams = {r[0] for r in rows}
     n_teams = len(unique_teams)
 
@@ -329,40 +338,38 @@ def _enqueue_locked(conn, limit_override=None):
 
                 gap = abs(rating_a - rating_b)
 
-                # Hard ceiling: No match is EVER created across a >250 Elo gap (unless uncalibrated)
-                if gap > 250.0 and not is_uncal:
+                # Hard ceiling: Strict 120 Elo gap limit for competitive high-rank matching
+                if gap > 120.0 and not is_uncal:
                     continue
 
-                # Dynamic Top-Tier Protection: Top teams (within 150 Elo of peak) only match within 220 Elo of peak
+                # Dynamic Top-Tier Protection: Top teams (within 150 Elo of peak) only match within 120 Elo of peak
                 top_r_a = max(team_highest_active_rating.get(tid_a, rating_a), rating_a)
                 top_r_b = max(team_highest_active_rating.get(tid_b, rating_b), rating_b)
                 max_ladder_rating = max(ratings) if ratings else 600.0
                 top_tier_cutoff = max_ladder_rating - 150.0
-                top_tier_min_allowed = max_ladder_rating - 220.0
+                top_tier_min_allowed = max_ladder_rating - 120.0
 
                 if max(top_r_a, top_r_b) >= top_tier_cutoff and min(top_r_a, top_r_b) < top_tier_min_allowed:
                     continue
 
-                # Starved teams can bypass gap check, but only up to 1.2x hard_gap
+                # Starved teams can bypass gap check, but only up to 1.1x hard_gap
                 if gap > current_hard_gap and not (is_starved_a or is_starved_b or is_uncal):
                     continue
-                if gap > current_hard_gap * 1.2 and not is_uncal:
+                if gap > current_hard_gap * 1.1 and not is_uncal:
                     continue
 
-                # 1. Quadratic Elo Distance Penalty (30 Elo gap = 1.0, 100 Elo = 11.1, 200 Elo = 44.4)
-                # If uncalibrated, remove the Elo penalty so they get priority matching and don't get starved by calibrated bots on the same team
-                elo_penalty = 0.0 if is_uncal else (gap / 30.0) ** 2.0
+                # 1. Quadratic Elo Distance Penalty
+                elo_penalty = 0.0 if is_uncal else (gap / 20.0) ** 2.0
 
                 # 2. Smooth Recency Decay over 15-minute horizon (forces opponent rotation)
                 mins_ago = pair_last_played.get((tid_a, tid_b), 999999.0)
-                recency_penalty = 30.0 / (max(0.05, mins_ago) + 0.4)
+                recency_penalty = 40.0 / (max(0.05, mins_ago) + 0.4)
 
                 # 3. Opponent Diversity Penalty: strongly penalize repeated matchups
                 times_played = pair_match_counts.get((tid_a, tid_b), 0)
-                # Extra: if they played each other recently (last 30 min), add a steep cooldown
                 mins_since_last = pair_last_played.get((tid_a, tid_b), 999999.0)
-                recent_pair_penalty = max(0.0, (30.0 - mins_since_last) * 3.0) if mins_since_last < 30.0 else 0.0
-                diversity_penalty = 35.0 * times_played + recent_pair_penalty
+                recent_pair_penalty = max(0.0, (30.0 - mins_since_last) * 4.0) if mins_since_last < 30.0 else 0.0
+                diversity_penalty = 40.0 * times_played + recent_pair_penalty
 
                 # 4. Load Balancing & Info Gain
                 overload = (max(0, h_count_a - avg_hour_matches) + max(0, h_count_b - avg_hour_matches))
@@ -376,7 +383,10 @@ def _enqueue_locked(conn, limit_override=None):
                 starve_b = min(starve_b, 2.5)
                 starvation_boost = 2.0 * (starve_a + starve_b)
 
-                cost = elo_penalty + recency_penalty + load_penalty + diversity_penalty - info_gain_bonus - starvation_boost
+                # 6. Top 3 Match Priority Boost
+                top3_boost = 50.0 if (tid_a in top_3_ids and tid_b in top_3_ids) else 0.0
+
+                cost = elo_penalty + recency_penalty + load_penalty + diversity_penalty - info_gain_bonus - starvation_boost - top3_boost
                 candidates.append((cost, i, j))
 
         candidates.sort(key=lambda x: x[0])
