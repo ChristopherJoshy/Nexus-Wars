@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
-import { RefreshCw, Search, Download, Timer, FileText, X, CheckCircle, Lock, Trophy, ShieldAlert } from "lucide-react";
+import { RefreshCw, Search, Download, Timer, FileText, X, CheckCircle, Lock, Trophy, ShieldAlert, LogIn } from "lucide-react";
 import {
   Table,
   TableBody,
@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { useSession } from "@/lib/auth-client";
 import { animate } from "animejs";
 import { Skeleton } from "@/components/ui/skeleton";
+import Link from "next/link";
 
 interface LeaderboardEntry {
   teamId: string;
@@ -108,14 +109,27 @@ export default function LeaderboardPage() {
   };
 
   // Fetch logged in user's team
+  const fetchMyTeam = async () => {
+    if (!session?.token) return null;
+    try {
+      const res = await fetch("/api/teams", {
+        headers: { Authorization: `Bearer ${session.token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setMyTeam(data);
+        return data;
+      }
+    } catch (err) {
+      console.error("Failed to fetch user team", err);
+    }
+    return null;
+  };
+
   useEffect(() => {
-    if (!session) return;
-    fetch("/api/teams", {
-      headers: { Authorization: `Bearer ${session.token}` },
-    })
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data) => setMyTeam(data))
-      .catch(() => setMyTeam(null));
+    if (session) {
+      fetchMyTeam();
+    }
   }, [session]);
 
   const fetchLeaderboard = async () => {
@@ -135,7 +149,6 @@ export default function LeaderboardPage() {
 
   useEffect(() => {
     fetchLeaderboard();
-    // Stop auto refresh if leaderboard is frozen
     if (isFrozen) return;
 
     const interval = setInterval(() => {
@@ -153,20 +166,36 @@ export default function LeaderboardPage() {
     fetchLeaderboard();
   };
 
-  const handleFormButtonClick = (entry: LeaderboardEntry) => {
+  const handleFormButtonClick = async (entry: LeaderboardEntry) => {
     setTargetTeam(entry);
     setSaveError(null);
     setSaveSuccess(false);
 
-    // Security Check: Only allow members of this specific team to view or edit details
-    const isMemberOfThisTeam = myTeam && myTeam.id === entry.teamId;
+    // If user is not signed in
+    if (!session?.user) {
+      setAccessDenied(true);
+      setModalOpen(true);
+      return;
+    }
 
-    if (isMemberOfThisTeam) {
+    // Ensure we have user's active team data
+    let userTeam = myTeam;
+    if (!userTeam) {
+      userTeam = await fetchMyTeam();
+    }
+
+    // Compare team IDs (robust case-insensitive string comparison)
+    const isMemberOfThisTeam = Boolean(
+      userTeam && userTeam.id && entry.teamId &&
+      String(userTeam.id).toLowerCase().trim() === String(entry.teamId).toLowerCase().trim()
+    );
+
+    if (isMemberOfThisTeam && userTeam) {
       setAccessDenied(false);
       setFormData({
-        college: myTeam.collegeName || "",
-        membersInfo: myTeam.teamMembersInfo || "",
-        phones: myTeam.mobileNumbers || "",
+        college: userTeam.collegeName || "",
+        membersInfo: userTeam.teamMembersInfo || "",
+        phones: userTeam.mobileNumbers || "",
       });
     } else {
       setAccessDenied(true);
@@ -259,7 +288,7 @@ export default function LeaderboardPage() {
 
   return (
     <div className="space-y-6">
-      {/* 3-Minute Closing & Frozen Banner (HIGH CONTRAST DARK DESIGN FOR ALL THEMES) */}
+      {/* 3-Minute Closing & Frozen Banner */}
       <div className="bg-stone-900 border-2 border-amber-500 rounded-2xl p-5 shadow-2xl flex flex-col sm:flex-row items-center justify-between gap-4 text-stone-100">
         <div className="flex items-center gap-4">
           <div className="p-3 rounded-xl bg-amber-500/20 border border-amber-500/50 shrink-0">
@@ -427,7 +456,7 @@ export default function LeaderboardPage() {
                       {relativeTimeStr}
                     </TableCell>
 
-                    {/* Registration Form Button (High Contrast Solid Colors) */}
+                    {/* Registration Form Button */}
                     <TableCell className="text-center">
                       {isTop10 ? (
                         <button
@@ -464,7 +493,7 @@ export default function LeaderboardPage() {
         </Table>
       </div>
 
-      {/* Registration Form / Access Control Modal (EXPLICIT HIGH-CONTRAST DARK THEME FOR ALL USERS) */}
+      {/* Registration Form / Access Control Modal */}
       {modalOpen && targetTeam && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-sm p-4">
           <div className="bg-stone-900 border-2 border-amber-500 rounded-2xl p-6 max-w-lg w-full space-y-5 shadow-2xl relative text-stone-100">
@@ -485,25 +514,41 @@ export default function LeaderboardPage() {
               </p>
             </div>
 
-            {/* Privacy Access Control Check (HIGH CONTRAST AMBER ALERT BOX) */}
+            {/* Privacy Access Control Check */}
             {accessDenied ? (
               <div className="space-y-4 py-2">
-                <div className="bg-amber-950/90 border-2 border-amber-500/80 text-amber-200 p-4 rounded-xl text-xs space-y-2 shadow-inner">
-                  <div className="flex items-center gap-2 font-black text-amber-400 text-sm">
-                    <ShieldAlert className="w-5 h-5 text-amber-400 shrink-0" />
-                    <span>Access Restricted (Privacy Protected)</span>
+                {!session?.user ? (
+                  <div className="bg-amber-950/90 border-2 border-amber-500/80 text-amber-200 p-4 rounded-xl text-xs space-y-3 shadow-inner">
+                    <div className="flex items-center gap-2 font-black text-amber-400 text-sm">
+                      <LogIn className="w-5 h-5 text-amber-400 shrink-0" />
+                      <span>Sign In Required</span>
+                    </div>
+                    <p className="leading-relaxed text-xs text-stone-200 font-medium">
+                      Please sign in to your account to view or edit <strong className="text-white uppercase font-bold">{targetTeam.teamName}</strong>&apos;s registration details.
+                    </p>
                   </div>
-                  <p className="leading-relaxed text-xs text-stone-200 font-medium">
-                    Only authenticated members of <strong className="text-white uppercase font-bold">{targetTeam.teamName}</strong> are authorized to view or edit their team registration details.
-                  </p>
-                </div>
-                <div className="flex justify-end">
+                ) : (
+                  <div className="bg-amber-950/90 border-2 border-amber-500/80 text-amber-200 p-4 rounded-xl text-xs space-y-3 shadow-inner">
+                    <div className="flex items-center gap-2 font-black text-amber-400 text-sm">
+                      <ShieldAlert className="w-5 h-5 text-amber-400 shrink-0" />
+                      <span>Access Restricted (Privacy Protected)</span>
+                    </div>
+                    <p className="leading-relaxed text-xs text-stone-200 font-medium">
+                      You are logged in as a member of <strong className="text-amber-400 uppercase font-bold">{myTeam?.name || "another team"}</strong>.
+                    </p>
+                    <p className="leading-relaxed text-xs text-stone-300">
+                      Only authenticated members of <strong className="text-white uppercase font-bold">{targetTeam.teamName}</strong> are authorized to view or edit their team&apos;s details.
+                    </p>
+                  </div>
+                )}
+
+                <div className="flex justify-end gap-3">
                   <Button
                     size="sm"
                     onClick={() => setModalOpen(false)}
-                    className="bg-amber-600 hover:bg-amber-700 text-white font-bold px-6 text-xs"
+                    className="bg-stone-800 hover:bg-stone-700 text-white font-bold px-5 text-xs"
                   >
-                    Got It
+                    Close
                   </Button>
                 </div>
               </div>
@@ -577,7 +622,7 @@ export default function LeaderboardPage() {
                     onClick={saveRegistrationDetails}
                     loading={savingDetails}
                     disabled={savingDetails || !formData.college || !formData.membersInfo || !formData.phones}
-                    className="nexus-pill bg-amber-500 hover:bg-amber-400 text-stone-950 font-black px-6 text-xs shadow-lg disabled:opacity-50"
+                    className="nexus-pill bg-amber-500 hover:bg-amber-400 text-stone-950 font-black px-6 text-xs shadow-lg disabled:opacity-50 cursor-pointer"
                   >
                     Save Details
                   </Button>
