@@ -195,7 +195,7 @@ def _enqueue_locked(conn, limit_override=None):
 
     # Queue Backpressure Control: Check how many pending match jobs are in queue
     pending_queue_count = _get_pending_match_count(conn)
-    max_allowed_pending = 100  # High cap keeps 24 worker threads fully saturated
+    max_allowed_pending = 1000  # Flood queue for final 30 minutes
     if pending_queue_count >= max_allowed_pending and limit_override is None:
         return 0
 
@@ -340,38 +340,16 @@ def _enqueue_locked(conn, limit_override=None):
 
                 gap = abs(rating_a - rating_b)
 
-                # Ceiling: 250 Elo gap limit for Top 12 teams
-                if gap > 250.0 and not is_uncal:
+                # Final 30-Min Cap: 500 Elo gap limit across all Top 12 teams
+                if gap > 500.0 and not is_uncal:
                     continue
 
-                # Dynamic Top-Tier Protection: Top teams (within 150 Elo of peak) only match within 120 Elo of peak
-                top_r_a = max(team_highest_active_rating.get(tid_a, rating_a), rating_a)
-                top_r_b = max(team_highest_active_rating.get(tid_b, rating_b), rating_b)
-                max_ladder_rating = max(ratings) if ratings else 600.0
-                top_tier_cutoff = max_ladder_rating - 150.0
-                top_tier_min_allowed = max_ladder_rating - 120.0
+                # 1. Linear Elo Distance Penalty
+                elo_penalty = gap / 10.0
 
-                if max(top_r_a, top_r_b) >= top_tier_cutoff and min(top_r_a, top_r_b) < top_tier_min_allowed:
-                    continue
-
-                # Starved teams can bypass gap check, but only up to 1.1x hard_gap
-                if gap > current_hard_gap and not (is_starved_a or is_starved_b or is_uncal):
-                    continue
-                if gap > current_hard_gap * 1.1 and not is_uncal:
-                    continue
-
-                # 1. Quadratic Elo Distance Penalty
-                elo_penalty = 0.0 if is_uncal else (gap / 20.0) ** 2.0
-
-                # 2. Smooth Recency Decay over 15-minute horizon (forces opponent rotation)
-                mins_ago = pair_last_played.get((tid_a, tid_b), 999999.0)
-                recency_penalty = 40.0 / (max(0.05, mins_ago) + 0.4)
-
-                # 3. Opponent Diversity Penalty: strongly penalize repeated matchups
-                times_played = pair_match_counts.get((tid_a, tid_b), 0)
-                mins_since_last = pair_last_played.get((tid_a, tid_b), 999999.0)
-                recent_pair_penalty = max(0.0, (30.0 - mins_since_last) * 4.0) if mins_since_last < 30.0 else 0.0
-                diversity_penalty = 40.0 * times_played + recent_pair_penalty
+                # Zero out recency and diversity penalties for maximum throughput
+                recency_penalty = 0.0
+                diversity_penalty = 0.0
 
                 # 4. Load Balancing & Info Gain
                 overload = (max(0, h_count_a - avg_hour_matches) + max(0, h_count_b - avg_hour_matches))
