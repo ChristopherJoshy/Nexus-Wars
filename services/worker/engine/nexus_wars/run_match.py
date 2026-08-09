@@ -32,7 +32,7 @@ from nexus_wars import interpreter, Planet, Fleet, BOARD_SIZE, CENTER, SUN_RADIU
 # Configuration + state helpers
 # --------------------------------------------------------------------------
 DEFAULT_CONFIG = {
-    "episodeSteps": 500,
+    "episodeSteps": 250,
     "actTimeout": 1.0,
     "runTimeout": 510,
     "shipSpeed": 6.0,
@@ -218,7 +218,9 @@ class SubprocessRunner:
 
     def close(self):
         """Cleanly shut down the bot process and reap all resources."""
-        self.dead = True
+        # Note: must NOT set self.dead here. run_match() calls close() on every
+        # runner after the match, so marking dead would make every submission
+        # look like a crash (see git history: 822fd59 introduced this bug).
         # 1. Close stdin so bot gets EOF and exits cleanly
         try:
             self.proc.stdin.close()
@@ -385,7 +387,7 @@ def _main(argv):
     ap.add_argument("--seed", type=int, default=1)
     ap.add_argument("--agents", nargs=2, default=["random", "starter"])
     ap.add_argument("--out", default="replay.json")
-    ap.add_argument("--episodeSteps", type=int, default=500)
+    ap.add_argument("--episodeSteps", type=int, default=250)
     args = ap.parse_args(argv)
 
     config = dict(DEFAULT_CONFIG)

@@ -26,7 +26,7 @@ ENGINE_VERSION = env("ENGINE_VERSION", "2026.1.0")
 # Match timeout: 8.5 minutes max.
 ACT_TIMEOUT = float(env("ACT_TIMEOUT", "2.0"))
 RUN_TIMEOUT = float(env("RUN_TIMEOUT", "510"))
-EPISODE_STEPS = int(env("EPISODE_STEPS", "500"))
+EPISODE_STEPS = int(env("EPISODE_STEPS", "250"))
 SHIP_SPEED = float(env("SHIP_SPEED", "6.0"))
 ENERGY_CAP = int(env("ENERGY_CAP", "100"))
 ENERGY_REGEN = int(env("ENERGY_REGEN", "5"))

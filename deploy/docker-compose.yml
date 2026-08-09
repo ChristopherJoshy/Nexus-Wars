@@ -81,6 +81,7 @@ services:
       POLL_INTERVAL: "0.2"
       ACT_TIMEOUT: "2.0"
       RUN_TIMEOUT: "650"
+      EPISODE_STEPS: "250"
       FIREBASE_SERVICE_ACCOUNT_PATH: /etc/firebase/service-account.json
     volumes:
       - ./nsjail.cfg:/etc/nsjail/nsjail.cfg:ro
