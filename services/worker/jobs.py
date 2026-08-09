@@ -196,8 +196,7 @@ def run_validation(conn, submission_id):
         replay = rm.run_match([runner_a, runner_b], cfg,
                                seed=secrets.randbits(31))
 
-        key = f"validation/{submission_id}.json"
-        size = put_json(key, replay)
+        key = None
 
         ok = (not runner_a.dead) and replay["info"]["steps"] >= 1
         reason = None if ok else "agent_error_or_timeout"
@@ -259,8 +258,7 @@ def run_rated(conn, match_id):
 
         replay = rm.run_match([runner_a, runner_b], cfg, seed=seed)
 
-        key = f"rated/{match_id}.json"
-        size = put_json(key, replay)
+        key = None
 
         winner = replay["info"]["winner"]
         win_code = "a" if winner == 0 else ("b" if winner == 1 else "draw")
