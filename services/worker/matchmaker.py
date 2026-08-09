@@ -195,7 +195,7 @@ def _enqueue_locked(conn, limit_override=None):
 
     # Queue Backpressure Control: Check how many pending match jobs are in queue
     pending_queue_count = _get_pending_match_count(conn)
-    max_allowed_pending = 50  # Higher cap prevents starvation when worker can't drain queue fast enough
+    max_allowed_pending = 100  # High cap keeps 24 worker threads fully saturated
     if pending_queue_count >= max_allowed_pending and limit_override is None:
         return 0
 
@@ -323,18 +323,11 @@ def _enqueue_locked(conn, limit_override=None):
                 if tid_a == tid_b:
                     continue
 
-                # Top 3 Bracket Isolation: Top 3 teams ONLY fight against each other
+                # Soft Top 3 Preference: Top 3 teams prefer playing each other, but can match any Top 12 team if needed
                 is_top3_a = tid_a in top_3_ids
                 is_top3_b = tid_b in top_3_ids
-                if is_top3_a != is_top3_b:
-                    continue
-
-                if (tid_a, tid_b) in active_pairs:
-                    continue
 
                 mins_ago = pair_last_played.get((tid_a, tid_b), 999999.0)
-                if mins_ago < current_pair_cooldown:
-                    continue
 
                 h_count_a = team_hour_counts.get(tid_a, 0)
                 h_count_b = team_hour_counts.get(tid_b, 0)
@@ -347,8 +340,8 @@ def _enqueue_locked(conn, limit_override=None):
 
                 gap = abs(rating_a - rating_b)
 
-                # Hard ceiling: Strict 120 Elo gap limit for competitive high-rank matching
-                if gap > 120.0 and not is_uncal:
+                # Ceiling: 250 Elo gap limit for Top 12 teams
+                if gap > 250.0 and not is_uncal:
                     continue
 
                 # Dynamic Top-Tier Protection: Top teams (within 150 Elo of peak) only match within 120 Elo of peak
@@ -392,8 +385,8 @@ def _enqueue_locked(conn, limit_override=None):
                 starve_b = min(starve_b, 2.5)
                 starvation_boost = 2.0 * (starve_a + starve_b)
 
-                # 6. Top 3 Match Priority Boost
-                top3_boost = 50.0 if (tid_a in top_3_ids and tid_b in top_3_ids) else 0.0
+                # 6. Top 3 Match Priority Boost (heavy preference for Top 3 showdowns)
+                top3_boost = 150.0 if (tid_a in top_3_ids and tid_b in top_3_ids) else 0.0
 
                 cost = elo_penalty + recency_penalty + load_penalty + diversity_penalty - info_gain_bonus - starvation_boost - top3_boost
                 candidates.append((cost, i, j))
