@@ -90,9 +90,7 @@ export async function GET() {
         return {
           teamId: t.teamId,
           teamName: t.teamName,
-          collegeName: t.collegeName || null,
-          teamMembersInfo: t.teamMembersInfo || null,
-          mobileNumbers: t.mobileNumbers || null,
+          hasRegistration: Boolean(t.collegeName && t.teamMembersInfo && t.mobileNumbers),
           rating: Math.round((top?.rating ?? 600) * 10) / 10,
           rd: Math.round((top?.rd ?? 350) * 10) / 10,
           wins: top?.wins ?? 0,

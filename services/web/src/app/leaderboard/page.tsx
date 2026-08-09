@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
-import { RefreshCw, Search, Download, Timer, FileText, X, CheckCircle } from "lucide-react";
+import { RefreshCw, Search, Download, Timer, FileText, X, CheckCircle, Lock } from "lucide-react";
 import {
   Table,
   TableBody,
@@ -18,9 +18,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 interface LeaderboardEntry {
   teamId: string;
   teamName: string;
-  collegeName?: string | null;
-  teamMembersInfo?: string | null;
-  mobileNumbers?: string | null;
+  hasRegistration?: boolean;
   rating: number;
   rd: number;
   wins: number;
@@ -30,6 +28,14 @@ interface LeaderboardEntry {
   lastActivityAt?: string | null;
   bestSubmissionId?: string | null;
   members?: { name: string; image?: string | null }[];
+}
+
+interface UserTeamData {
+  id: string;
+  name: string;
+  collegeName?: string | null;
+  teamMembersInfo?: string | null;
+  mobileNumbers?: string | null;
 }
 
 function formatRelativeTime(dateInput: Date | string | number | null | undefined): string {
@@ -59,12 +65,17 @@ export default function LeaderboardPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [autoRefreshing, setAutoRefreshing] = useState(false);
 
+  // Authenticated User's Team Data
+  const [myTeam, setMyTeam] = useState<UserTeamData | null>(null);
+
   // 30-Minute Closing Countdown Timer State (1800 seconds)
   const [timeLeft, setTimeLeft] = useState<number>(1800);
 
-  // Modal State for Top 10 Team Registration
-  const [selectedTeam, setSelectedTeam] = useState<{ id: string; name: string; college: string; membersInfo: string; phones: string } | null>(null);
+  // Modal State for Team Registration
+  const [targetTeam, setTargetTeam] = useState<LeaderboardEntry | null>(null);
+  const [formData, setFormData] = useState({ college: "", membersInfo: "", phones: "" });
   const [modalOpen, setModalOpen] = useState(false);
+  const [accessDenied, setAccessDenied] = useState(false);
   const [savingDetails, setSavingDetails] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -84,6 +95,17 @@ export default function LeaderboardPage() {
     const s = seconds % 60;
     return `${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
   };
+
+  // Fetch logged in user's team
+  useEffect(() => {
+    if (!session) return;
+    fetch("/api/teams", {
+      headers: { Authorization: `Bearer ${session.token}` },
+    })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => setMyTeam(data))
+      .catch(() => setMyTeam(null));
+  }, [session]);
 
   const fetchLeaderboard = async () => {
     try {
@@ -114,21 +136,29 @@ export default function LeaderboardPage() {
     fetchLeaderboard();
   };
 
-  const openFormModal = (entry: LeaderboardEntry) => {
-    setSelectedTeam({
-      id: entry.teamId,
-      name: entry.teamName,
-      college: entry.collegeName || "",
-      membersInfo: entry.teamMembersInfo || "",
-      phones: entry.mobileNumbers || "",
-    });
+  const handleFormButtonClick = (entry: LeaderboardEntry) => {
+    setTargetTeam(entry);
     setSaveError(null);
     setSaveSuccess(false);
+
+    // Security Check: Only allow members of this specific team to view or edit details
+    const isMemberOfThisTeam = myTeam && myTeam.id === entry.teamId;
+
+    if (isMemberOfThisTeam) {
+      setAccessDenied(false);
+      setFormData({
+        college: myTeam.collegeName || "",
+        membersInfo: myTeam.teamMembersInfo || "",
+        phones: myTeam.mobileNumbers || "",
+      });
+    } else {
+      setAccessDenied(true);
+    }
     setModalOpen(true);
   };
 
   const saveRegistrationDetails = async () => {
-    if (!selectedTeam || !session) return;
+    if (!targetTeam || !session || accessDenied) return;
     setSavingDetails(true);
     setSaveError(null);
     try {
@@ -139,14 +169,16 @@ export default function LeaderboardPage() {
           Authorization: `Bearer ${session.token}`,
         },
         body: JSON.stringify({
-          teamId: selectedTeam.id,
-          collegeName: selectedTeam.college,
-          teamMembersInfo: selectedTeam.membersInfo,
-          mobileNumbers: selectedTeam.phones,
+          teamId: targetTeam.teamId,
+          collegeName: formData.college,
+          teamMembersInfo: formData.membersInfo,
+          mobileNumbers: formData.phones,
         }),
       });
 
       if (res.ok) {
+        const updated = await res.json();
+        setMyTeam(updated);
         setSaveSuccess(true);
         setTimeout(() => {
           setModalOpen(false);
@@ -166,13 +198,10 @@ export default function LeaderboardPage() {
 
   const exportCSV = () => {
     if (entries.length === 0) return;
-    const headers = ["Rank", "Team Name", "College Name", "Team Members", "Mobile Numbers", "Rating", "RD", "Wins", "Losses", "Draws", "Matches Played"];
+    const headers = ["Rank", "Team Name", "Rating", "RD", "Wins", "Losses", "Draws", "Matches Played"];
     const rows = entries.map((e, index) => [
       index + 1,
       `"${e.teamName.replace(/"/g, '""')}"`,
-      `"${(e.collegeName || "").replace(/"/g, '""')}"`,
-      `"${(e.teamMembersInfo || "").replace(/"/g, '""')}"`,
-      `"${(e.mobileNumbers || "").replace(/"/g, '""')}"`,
       e.rating.toFixed(1),
       e.rd.toFixed(1),
       e.wins,
@@ -185,7 +214,7 @@ export default function LeaderboardPage() {
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
     link.setAttribute("href", encodedUri);
-    link.setAttribute("download", "nexus-wars-leaderboard-export.csv");
+    link.setAttribute("download", "nexus-wars-leaderboard.csv");
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -213,7 +242,7 @@ export default function LeaderboardPage() {
 
   return (
     <div className="space-y-5">
-      {/* 30-Minute Closing Countdown Banner */}
+      {/* 30-Minute Closing Countdown Banner (Visible to EVERYONE) */}
       <div className="bg-gradient-to-r from-amber-500/20 via-primary/20 to-amber-500/20 border border-amber-500/40 rounded-xl p-4 flex flex-col sm:flex-row items-center justify-between gap-3 text-amber-300 font-mono shadow-lg">
         <div className="flex items-center gap-3">
           <div className="p-2 rounded-lg bg-amber-500/20 border border-amber-500/40">
@@ -254,7 +283,7 @@ export default function LeaderboardPage() {
             className="nexus-pill bg-muted border-border text-foreground hover:bg-accent text-xs cursor-pointer active:scale-95"
           >
             <Download className="w-3.5 h-3.5" />
-            Export CSV
+            Raw Data
           </Button>
           <Button
             variant="outline"
@@ -316,7 +345,7 @@ export default function LeaderboardPage() {
                 const isTop3 = i < 3;
                 const isTop10 = i < 10;
                 const relativeTimeStr = formatRelativeTime(e.lastActivityAt);
-                const hasRegistration = Boolean(e.collegeName && e.teamMembersInfo && e.mobileNumbers);
+                const hasRegistration = Boolean(e.hasRegistration);
 
                 return (
                   <TableRow
@@ -362,11 +391,11 @@ export default function LeaderboardPage() {
                       {relativeTimeStr}
                     </TableCell>
 
-                    {/* Registration Form Button (ONLY FOR TOP 10 TEAMS) */}
+                    {/* Registration Form Button (Visible to ALL users for Top 10 Teams) */}
                     <TableCell className="text-center">
                       {isTop10 ? (
                         <button
-                          onClick={() => openFormModal(e)}
+                          onClick={() => handleFormButtonClick(e)}
                           className={`inline-flex items-center gap-1.5 px-3 py-1 rounded text-xs font-semibold transition-all cursor-pointer active:scale-95 ${
                             hasRegistration
                               ? "bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/40 text-emerald-400"
@@ -399,8 +428,8 @@ export default function LeaderboardPage() {
         </Table>
       </div>
 
-      {/* Top 10 Team Registration Form Modal */}
-      {modalOpen && selectedTeam && (
+      {/* Registration Form / Access Control Modal */}
+      {modalOpen && targetTeam && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-xs p-4">
           <div className="bg-card border border-border rounded-xl p-6 max-w-lg w-full space-y-4 shadow-2xl relative">
             <button
@@ -413,83 +442,105 @@ export default function LeaderboardPage() {
             <div>
               <h3 className="text-lg font-bold text-foreground">Top 10 Team Registration</h3>
               <p className="text-xs text-muted-foreground mt-0.5">
-                Team: <span className="font-semibold text-primary">{selectedTeam.name}</span>
+                Team: <span className="font-semibold text-primary">{targetTeam.teamName}</span>
               </p>
             </div>
 
-            {saveSuccess && (
-              <div className="bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 p-3 rounded-lg text-xs font-mono flex items-center gap-2">
-                <CheckCircle className="w-4 h-4 text-emerald-400" />
-                Team registration details saved successfully!
+            {/* Privacy Access Control Check */}
+            {accessDenied ? (
+              <div className="space-y-4 py-3">
+                <div className="bg-amber-500/10 border border-amber-500/30 text-amber-300 p-4 rounded-xl text-xs space-y-2">
+                  <div className="flex items-center gap-2 font-bold text-amber-400">
+                    <Lock className="w-4 h-4" />
+                    <span>Access Restricted (Privacy Protected)</span>
+                  </div>
+                  <p className="leading-relaxed text-[11px]">
+                    Only authenticated members of <strong className="text-foreground">{targetTeam.teamName}</strong> are authorized to view or edit their team registration details.
+                  </p>
+                </div>
+                <div className="flex justify-end">
+                  <Button size="sm" onClick={() => setModalOpen(false)} className="text-xs">
+                    Close
+                  </Button>
+                </div>
               </div>
+            ) : (
+              <>
+                {saveSuccess && (
+                  <div className="bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 p-3 rounded-lg text-xs font-mono flex items-center gap-2">
+                    <CheckCircle className="w-4 h-4 text-emerald-400" />
+                    Team registration details saved successfully!
+                  </div>
+                )}
+
+                {saveError && (
+                  <div className="bg-destructive/10 border border-destructive/30 text-destructive p-3 rounded-lg text-xs font-mono">
+                    {saveError}
+                  </div>
+                )}
+
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-xs font-mono text-muted-foreground uppercase mb-1">
+                      College / Institution Name
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.college}
+                      onChange={(e) => setFormData({ ...formData, college: e.target.value })}
+                      placeholder="e.g. National Institute of Technology"
+                      className="w-full bg-muted border border-border focus:border-primary p-2.5 rounded-lg text-xs text-foreground outline-none font-medium"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-mono text-muted-foreground uppercase mb-1">
+                      Team Members Names
+                    </label>
+                    <textarea
+                      rows={2}
+                      value={formData.membersInfo}
+                      onChange={(e) => setFormData({ ...formData, membersInfo: e.target.value })}
+                      placeholder="e.g. Christopher Joshy, Karthik, Alex"
+                      className="w-full bg-muted border border-border focus:border-primary p-2.5 rounded-lg text-xs text-foreground outline-none font-medium resize-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-mono text-muted-foreground uppercase mb-1">
+                      Mobile Phone Numbers
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.phones}
+                      onChange={(e) => setFormData({ ...formData, phones: e.target.value })}
+                      placeholder="e.g. +91 9876543210, +91 9123456789"
+                      className="w-full bg-muted border border-border focus:border-primary p-2.5 rounded-lg text-xs text-foreground outline-none font-medium"
+                    />
+                  </div>
+                </div>
+
+                <div className="pt-2 flex justify-end gap-3">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setModalOpen(false)}
+                    className="text-xs"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={saveRegistrationDetails}
+                    loading={savingDetails}
+                    disabled={savingDetails || !formData.college || !formData.membersInfo || !formData.phones}
+                    className="nexus-pill bg-primary hover:bg-primary/90 text-primary-foreground font-bold px-5 text-xs"
+                  >
+                    Save Details
+                  </Button>
+                </div>
+              </>
             )}
-
-            {saveError && (
-              <div className="bg-destructive/10 border border-destructive/30 text-destructive p-3 rounded-lg text-xs font-mono">
-                {saveError}
-              </div>
-            )}
-
-            <div className="space-y-3">
-              <div>
-                <label className="block text-xs font-mono text-muted-foreground uppercase mb-1">
-                  College / Institution Name
-                </label>
-                <input
-                  type="text"
-                  value={selectedTeam.college}
-                  onChange={(e) => setSelectedTeam({ ...selectedTeam, college: e.target.value })}
-                  placeholder="e.g. National Institute of Technology"
-                  className="w-full bg-muted border border-border focus:border-primary p-2.5 rounded-lg text-xs text-foreground outline-none font-medium"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-mono text-muted-foreground uppercase mb-1">
-                  Team Members Names
-                </label>
-                <textarea
-                  rows={2}
-                  value={selectedTeam.membersInfo}
-                  onChange={(e) => setSelectedTeam({ ...selectedTeam, membersInfo: e.target.value })}
-                  placeholder="e.g. Christopher Joshy, Karthik, Alex"
-                  className="w-full bg-muted border border-border focus:border-primary p-2.5 rounded-lg text-xs text-foreground outline-none font-medium resize-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-mono text-muted-foreground uppercase mb-1">
-                  Mobile Phone Numbers
-                </label>
-                <input
-                  type="text"
-                  value={selectedTeam.phones}
-                  onChange={(e) => setSelectedTeam({ ...selectedTeam, phones: e.target.value })}
-                  placeholder="e.g. +91 9876543210, +91 9123456789"
-                  className="w-full bg-muted border border-border focus:border-primary p-2.5 rounded-lg text-xs text-foreground outline-none font-medium"
-                />
-              </div>
-            </div>
-
-            <div className="pt-2 flex justify-end gap-3">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setModalOpen(false)}
-                className="text-xs"
-              >
-                Cancel
-              </Button>
-              <Button
-                size="sm"
-                onClick={saveRegistrationDetails}
-                loading={savingDetails}
-                disabled={savingDetails || !selectedTeam.college || !selectedTeam.membersInfo || !selectedTeam.phones}
-                className="nexus-pill bg-primary hover:bg-primary/90 text-primary-foreground font-bold px-5 text-xs"
-              >
-                Save Details
-              </Button>
-            </div>
           </div>
         </div>
       )}
