@@ -77,7 +77,7 @@ services:
       MINIO_BUCKET: nexus-replays
       USE_NSJAIL: "1"
       NSJAIL_CFG: /etc/nsjail/nsjail.cfg
-      MAX_CONCURRENT: "16"
+      MAX_CONCURRENT: "24"
       POLL_INTERVAL: "0.2"
       ACT_TIMEOUT: "2.0"
       RUN_TIMEOUT: "650"
