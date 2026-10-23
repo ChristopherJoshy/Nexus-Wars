@@ -1,112 +1,89 @@
-# Nexus Wars
+<div align="center">
+  <img width="100%" src="https://capsule-render.vercel.app/api?type=waving&color=0:0b1020,35:1d4ed8,70:7c3aed,100:22d3ee&height=190&section=header&text=Nexus%20Wars&fontSize=62&fontColor=ffffff&animation=twinkling&fontAlignY=36&desc=Write%20a%20bot.%20Launch%20it%20into%20orbit.&descAlignY=58&descSize=17" alt="Nexus Wars animated header" />
 
-A competitive AI-programming game platform where bots written by players battle in a space-themed real-time strategy simulation. Players submit Python agents, and the platform runs head-to-head matches in a sandboxed environment with Glicko-2 rating.
+  <p>
+    <img src="https://img.shields.io/badge/Web-Next.js%2016-111827?style=for-the-badge&logo=nextdotjs&logoColor=white" alt="Next.js 16" />
+    <img src="https://img.shields.io/badge/Worker-Python-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python worker" />
+    <img src="https://img.shields.io/badge/Rating-Glicko--2-7C3AED?style=for-the-badge" alt="Glicko-2" />
+    <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-67E8F9?style=for-the-badge" alt="MIT License" /></a>
+  </p>
+</div>
 
-## Architecture
+## 🌠 The game
 
+Nexus Wars is a bot-battle platform set in a deterministic space strategy simulation. Players submit Python agents; a separate worker extracts and runs them in a Linux sandbox, records match results, and updates Glicko-2 ratings.
+
+<p align="center"><img src="services/web/public/nexus_wars_schematic.jpg" width="78%" alt="Nexus Wars game schematic" /></p>
+
+## 🛰️ System map
+
+```mermaid
+flowchart LR
+  A[Next.js web app] --> B[PostgreSQL]
+  A --> C[MinIO object storage]
+  A --> D[Submission queue]
+  D --> E[Python worker]
+  E --> F[nsjail sandbox and game engine]
+  F --> G[Match result and Glicko-2]
+  G --> B
 ```
-Web (Next.js 16)  ──HTTP──>  Worker (Python, nsjail sandbox)
-     │                            │
-     ├── Postgres (Docker)        ├── Postgres (same)
-     └── MinIO (Docker)           └── MinIO (same)
-```
 
-- **Web app** — Next.js 16 (App Router), Firebase Auth, Drizzle ORM, Tailwind CSS 4
-- **Worker** — Python 3 job loop with nsjail sandbox (Linux), deterministic game engine, Glicko-2 rating
-- **Infra** — PostgreSQL 16, MinIO (S3-compatible object storage)
+## 🧰 Stack
 
-## Quick Start
+| Layer | Tools |
+|---|---|
+| Web | Next.js 16, React, TypeScript, Tailwind, Drizzle |
+| Identity | Firebase Auth |
+| Worker | Python 3, nsjail sandbox |
+| Data | PostgreSQL 16, MinIO |
+| Local environment | Docker Compose |
 
-### Prerequisites
+## 🚀 Local development
 
-- Docker Desktop (WSL2 backend on Windows)
-- Node.js 20+
-- Python 3.10+
-
-### Web App (Development)
+Prerequisites: Docker Desktop/WSL2, Node.js 20+, Python 3.10+.
 
 ```bash
+git clone https://github.com/ChristopherJoshy/nexus-wars.git
+cd nexus-wars
 cd services/web
 npm install
-npm run dev        # http://localhost:3000
+npm run dev
 ```
 
-### Infrastructure
+From the repository root, start local services with Docker Compose:
 
 ```bash
 docker compose -f deploy/docker-compose.yml up -d postgres minio mc
 docker compose -f deploy/docker-compose.yml up -d worker
 ```
 
-### Setting Up Firebase Auth
+Firebase service-account configuration and the `NEXT_PUBLIC_FIREBASE_*` variables are needed for authenticated flows. See the deployment files and environment examples; keep credentials outside Git.
 
-1. Create a Firebase project and enable Google sign-in
-2. Download the service account JSON and place it at the project root as `nexuswars2026-firebase-adminsdk-<hash>.json`
-3. Set the `FIREBASE_SERVICE_ACCOUNT_PATH` env var (or Docker volume mount at `/etc/firebase/service-account.json`)
-4. Set `NEXT_PUBLIC_FIREBASE_*` env vars for the web app
-
-### Running Tests
+## 🧪 Tests
 
 ```bash
-# Engine tests
 python -m pytest tests/ -q
-
-# Glicko-2 tests
 python services/worker/rating/test_glicko2.py
 ```
 
-## Submitting & Testing Bots
+## 🧑‍🚀 Bot contract
 
-1. Create a team on the web app
-2. Write a Python bot that implements the `agent()` function
-3. Test locally using the official [Local Testing Tools](https://github.com/ChristopherJoshy/Nexus-wars-local-testing-tools-) repository
-4. Upload via the submission page
-5. The worker validates, runs matches, and updates ratings
+A submitted Python agent receives an observation and game configuration, then returns actions in the engine's expected format. Read `services/worker/engine/nexus_wars/nexus_wars.json` and the included local test tools before writing an agent.
 
-### Bot API
+## 🗂️ Layout
 
-```python
-def agent(observation, configuration):
-    # observation: dict with 'planets' and 'fleets' arrays
-    # configuration: dict with game settings
-    # Return: list of [source, target, ship_ratio] actions
-    return []
+```text
+services/web/       Next.js app and API
+services/worker/    match orchestration, engine, rating and sandbox
+deploy/             Docker Compose and container setup
+migrations/         database migrations
+tests/              worker and engine tests
 ```
 
-See the game engine spec at `services/worker/engine/nexus_wars/nexus_wars.json` for full details.
+## 📄 License
 
-## Project Structure
+MIT. See [`LICENSE`](LICENSE).
 
-```
-├── services/
-│   ├── web/              # Next.js 16 frontend + API
-│   │   └── src/
-│   │       ├── app/      # Pages and API routes
-│   │       ├── components/  # React components
-│   │       └── lib/      # Auth, DB, S3 utilities
-│   └── worker/           # Python backend
-│       ├── engine/       # Game engine (nexus_wars)
-│       ├── rating/       # Glicko-2 implementation
-│       ├── jobs.py       # Job runner
-│       └── matchmaker.py # Matchmaking logic
-├── deploy/               # Docker Compose, Dockerfiles, sandbox config
-├── migrations/           # PostgreSQL schema migrations
-├── docs/                 # Documentation
-└── tests/                # Python test suite
-```
+## ⚠️ Notes
 
-## Deployment
-
-The worker requires Linux with nsjail for sandboxing. See `deploy/Dockerfile.worker` for the container build.
-
-## Tech Stack
-
-| Layer | Technology |
-|---|---|
-| Frontend | Next.js 16, React 19, TypeScript, Tailwind CSS 4, shadcn/ui |
-| Auth | Firebase Auth (Google OAuth) |
-| Database | PostgreSQL 16 (Drizzle ORM / raw SQL) |
-| Storage | MinIO (S3-compatible) |
-| Backend | Python 3, nsjail sandbox |
-| Rating | Glicko-2 |
-| Infrastructure | Docker Compose |
+The worker sandbox is Linux-specific and relies on nsjail. A local development setup is not a production security review; inspect sandbox limits and submission handling before exposing it to untrusted uploads.
