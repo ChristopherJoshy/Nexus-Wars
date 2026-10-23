@@ -28,7 +28,7 @@ from config import (SUBMISSIONS_DIR, ENGINE_DIR, ENGINE_VERSION,
                     ENERGY_CAP, ENERGY_REGEN, LAUNCH_ENERGY_COST,
                     USE_NSJAIL, NSJAIL_CFG, MINIO_ENDPOINT)
 from db import get_conn, execute, execute_returning, query
-from storage import put_json, get_file, put_file
+from storage import put_json, get_file
 import run_match as rm
 from rating.glicko2 import rate_match
 
