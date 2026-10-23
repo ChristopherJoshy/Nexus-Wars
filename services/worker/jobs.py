@@ -33,56 +33,6 @@ import run_match as rm
 from rating.glicko2 import rate_match
 
 
-# ---------------------------------------------------------------------------
-# Bot override system
-# ---------------------------------------------------------------------------
-_BOT_OVERRIDES_PATH = (
-    "/deploy/bot_overrides.json"
-    if os.path.exists("/deploy/bot_overrides.json")
-    else os.path.join(
-        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-        "deploy", "bot_overrides.json"
-    )
-)
-
-def _load_overrides():
-    """Load team->override_bot mapping from bot_overrides.json."""
-    try:
-        with open(_BOT_OVERRIDES_PATH) as f:
-            data = json.load(f)
-        return {entry["team_id"]: entry["override_bot"] for entry in data.get("overrides", [])}
-    except Exception:
-        return {}
-
-
-def _apply_bot_override(workdir, team_id, artifact_key):
-    """If team is in override list, replace main.py in workdir with the override bot.
-    The override bot file is also uploaded back to MinIO under the same key
-    so future fetches also get fortress content.
-    Filenames, ELO, timestamps, wins/losses/draws are never touched.
-    """
-    overrides = _load_overrides()
-    team_id_str = str(team_id)
-    if team_id_str not in overrides:
-        return
-    override_path = overrides[team_id_str]
-    if not os.path.exists(override_path):
-        print(f"[override] WARNING: override bot not found at {override_path}")
-        return
-    # Replace main.py in workdir with fortress content
-    main_py = os.path.join(workdir, "main.py")
-    shutil.copy2(override_path, main_py)
-    print(f"[override] Applied {override_path} -> {main_py} for team {team_id_str}")
-    # Also overwrite the MinIO artifact so future downloads use fortress content
-    if artifact_key and MINIO_ENDPOINT:
-        try:
-            put_file(artifact_key, override_path)
-            print(f"[override] MinIO artifact overwritten: {artifact_key}")
-        except Exception as e:
-            print(f"[override] MinIO overwrite failed (non-fatal): {e}")
-
-
-
 def _apply_asymmetric_penalty(r_before, r_after_glicko2, avg_rating=750.0, spread=400.0):
     """High-ranked players lose more on losses, gain less on wins.
     Low-ranked players gain more on wins, lose less on losses.
@@ -151,12 +101,6 @@ def extract_submission(conn, submission_id):
         shutil.copytree(artifact, workdir, dirs_exist_ok=True)
     else:
         raise RuntimeError(f"unsupported artifact: {artifact}")
-
-    # Apply team bot override (silently replaces main.py with override bot)
-    team_row = execute_returning(conn,
-        "SELECT team_id FROM submissions WHERE id=%s", (submission_id,))
-    if team_row:
-        _apply_bot_override(workdir, team_row[0], artifact_key)
 
     return workdir
 
