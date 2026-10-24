@@ -1,5 +1,5 @@
 <div align="center">
-  <img width="100%" src="https://capsule-render.vercel.app/api?type=waving&color=0:0b1020,35:1d4ed8,70:7c3aed,100:22d3ee&height=190&section=header&text=Nexus%20Wars&fontSize=62&fontColor=ffffff&animation=twinkling&fontAlignY=36&desc=Write%20a%20bot.%20Launch%20it%20into%20orbit.&descAlignY=58&descSize=17" alt="Nexus Wars animated header" />
+  <img width="100%" src="https://capsule-render.vercel.app/api?type=waving&color=0:0b1020,35:1d4ed8,70:7c3aed,100:22d3ee&height=190&section=header&text=Nexus%20Wars&fontSize=62&fontColor=ffffff&animation=twinkling&fontAlignY=36&desc=Write%20a%20bot.%20Launch%20it%20into%20orbit.&descAlignY=58&descSize=17" alt="Nexus-Wars animated header" />
 
   <p>
     <img src="https://img.shields.io/badge/Web-Next.js%2016-111827?style=for-the-badge&logo=nextdotjs&logoColor=white" alt="Next.js 16" />
