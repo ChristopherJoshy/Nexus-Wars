@@ -30,7 +30,7 @@ export default function OverviewPage() {
               </p>
             </div>
             <a
-              href="https://github.com/ChristopherJoshy/Nexus-wars-local-testing-tools-"
+              href="https://github.com/ChristopherJoshy/Attic/tree/master/Nexus-wars-local-testing-tools-"
               target="_blank"
               rel="noopener noreferrer"
               className="px-4 py-2 text-xs font-mono font-bold bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors shrink-0 flex items-center gap-1.5 shadow-xs"
@@ -492,12 +492,12 @@ if __name__ == "__main__":
                 <h3 className="font-bold text-foreground text-sm">Nexus Wars Local Testing Tools Suite</h3>
               </div>
               <a
-                href="https://github.com/ChristopherJoshy/Nexus-wars-local-testing-tools-"
+                href="https://github.com/ChristopherJoshy/Attic/tree/master/Nexus-wars-local-testing-tools-"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="px-3 py-1 text-xs font-mono font-bold bg-primary text-primary-foreground rounded hover:bg-primary/90 transition-colors flex items-center gap-1"
               >
-                <span>github.com/ChristopherJoshy/Nexus-wars-local-testing-tools-</span>
+                <span>github.com/ChristopherJoshy/Attic/tree/master/Nexus-wars-local-testing-tools-</span>
                 <ExternalLink className="w-3 h-3" />
               </a>
             </div>

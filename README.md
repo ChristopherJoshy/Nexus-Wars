@@ -43,7 +43,7 @@ flowchart LR
 Prerequisites: Docker Desktop/WSL2, Node.js 20+, Python 3.10+.
 
 ```bash
-git clone https://github.com/ChristopherJoshy/nexus-wars.git
+git clone https://github.com/ChristopherJoshy/Nexus-Wars.git
 cd nexus-wars
 cd services/web
 npm install
